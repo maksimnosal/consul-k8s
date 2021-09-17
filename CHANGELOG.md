@@ -1,5 +1,9 @@
 ## UNRELEASED
 
+BUG FIX:
+* Helm
+  * Fix consul-k8s image version in values file
+
 ## 0.34.0 (September 17, 2021)
 FEATURES:
 * CLI
