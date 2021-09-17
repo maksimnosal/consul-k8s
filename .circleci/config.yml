@@ -69,7 +69,7 @@ commands:
         type: string
       consul-k8s-image:
         type: string
-        default: "docker.mirror.hashicorp.services/hashicorpdev/consul-k8s-control-plane:latest"
+        default: "docker.mirror.hashicorp.services/hashicorp/consul-k8s-control-plane:0.34.0"
     steps:
       - when:
           condition: << parameters.failfast >>
