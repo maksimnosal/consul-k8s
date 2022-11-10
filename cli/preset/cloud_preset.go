@@ -198,6 +198,8 @@ global:
     bootstrapToken:
       secretName: %s
       secretKey: %s
+  peering:
+    enabled: true
   cloud:
     enabled: true
     resourceId:
@@ -212,6 +214,8 @@ global:
     %s
     %s
     %s
+meshGateway:
+  enabled: true
 server:
   replicas: %d
   affinity: null

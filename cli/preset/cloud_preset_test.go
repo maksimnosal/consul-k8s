@@ -480,12 +480,16 @@ global:
   gossipEncryption:
     secretKey: key
     secretName: consul-gossip-key
+  peering:
+    enabled: true
   tls:
     caCert:
       secretKey: tls.crt
       secretName: consul-server-ca
     enableAutoEncrypt: true
     enabled: true
+meshGateway:
+  enabled: true
 server:
   affinity: null
   replicas: 3
@@ -518,12 +522,16 @@ global:
   gossipEncryption:
     secretKey: key
     secretName: consul-gossip-key
+  peering:
+    enabled: true
   tls:
     caCert:
       secretKey: tls.crt
       secretName: consul-server-ca
     enableAutoEncrypt: true
     enabled: true
+meshGateway:
+  enabled: true
 server:
   affinity: null
   replicas: 3
