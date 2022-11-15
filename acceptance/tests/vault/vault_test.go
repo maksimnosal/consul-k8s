@@ -203,6 +203,8 @@ func TestVault(t *testing.T) {
 	vaultCASecret := vault.CASecretName(vaultReleaseName)
 
 	consulHelmValues := map[string]string{
+		"global.imageK8S":             "kyleschochenmaier/consul-k8s-dev",
+		"global.image":                "kyleschochenmaier/consul:vault-provider-fix",
 		"server.extraVolumes[0].type": "secret",
 		"server.extraVolumes[0].name": vaultCASecret,
 		"server.extraVolumes[0].load": "false",
@@ -336,4 +338,5 @@ func TestVault(t *testing.T) {
 	// verify that a previous cert expired and that a new one has been issued
 	// by comparing the NotAfter on the two certs.
 	require.NotEqual(t, connectInjectorCert.NotAfter, connectInjectorCert2.NotAfter)
+	time.Sleep(time.Hour * 1)
 }

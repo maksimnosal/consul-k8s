@@ -61,6 +61,8 @@ data:
               {{- end }}
               "intermediate_pki_path": "{{ .connectCA.intermediatePKIPath }}",
               "root_pki_path": "{{ .connectCA.rootPKIPath }}",
+              "intermediate_cert_ttl": "15m",
+              "leaf_cert_ttl": "5m",
               "auth_method": {
                 "type": "kubernetes",
                 "mount_path": "{{ .connectCA.authMethodPath }}",
