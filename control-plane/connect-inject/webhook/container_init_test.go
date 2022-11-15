@@ -85,12 +85,8 @@ func TestHandlerContainerInit(t *testing.T) {
 					Value: "0s",
 				},
 				{
-					Name: "CONSUL_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
+					Name:  "CONSUL_NODE_NAME",
+					Value: "$(NODE_NAME)-virtual",
 				},
 			},
 		},
@@ -138,12 +134,8 @@ func TestHandlerContainerInit(t *testing.T) {
 					Value: "5s",
 				},
 				{
-					Name: "CONSUL_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
+					Name:  "CONSUL_NODE_NAME",
+					Value: "$(NODE_NAME)-virtual",
 				},
 				{
 					Name:  "CONSUL_LOGIN_AUTH_METHOD",
@@ -169,7 +161,7 @@ func TestHandlerContainerInit(t *testing.T) {
 			require.NoError(t, err)
 			actual := strings.Join(container.Command, " ")
 			require.Contains(t, actual, tt.ExpCmd)
-			require.EqualValues(t, container.Env[2:], tt.ExpEnv)
+			require.EqualValues(t, container.Env[3:], tt.ExpEnv)
 		})
 	}
 }
@@ -378,12 +370,8 @@ func TestHandlerContainerInit_namespacesAndPartitionsEnabled(t *testing.T) {
 					Value: "5s",
 				},
 				{
-					Name: "CONSUL_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
+					Name:  "CONSUL_NODE_NAME",
+					Value: "$(NODE_NAME)-virtual",
 				},
 				{
 					Name:  "CONSUL_NAMESPACE",
@@ -425,12 +413,8 @@ func TestHandlerContainerInit_namespacesAndPartitionsEnabled(t *testing.T) {
 					Value: "5s",
 				},
 				{
-					Name: "CONSUL_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
+					Name:  "CONSUL_NODE_NAME",
+					Value: "$(NODE_NAME)-virtual",
 				},
 				{
 					Name:  "CONSUL_NAMESPACE",
@@ -476,12 +460,8 @@ func TestHandlerContainerInit_namespacesAndPartitionsEnabled(t *testing.T) {
 					Value: "5s",
 				},
 				{
-					Name: "CONSUL_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
+					Name:  "CONSUL_NODE_NAME",
+					Value: "$(NODE_NAME)-virtual",
 				},
 				{
 					Name:  "CONSUL_NAMESPACE",
@@ -523,12 +503,8 @@ func TestHandlerContainerInit_namespacesAndPartitionsEnabled(t *testing.T) {
 					Value: "5s",
 				},
 				{
-					Name: "CONSUL_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
+					Name:  "CONSUL_NODE_NAME",
+					Value: "$(NODE_NAME)-virtual",
 				},
 				{
 					Name:  "CONSUL_NAMESPACE",
@@ -577,12 +553,8 @@ func TestHandlerContainerInit_namespacesAndPartitionsEnabled(t *testing.T) {
 					Value: "5s",
 				},
 				{
-					Name: "CONSUL_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
+					Name:  "CONSUL_NODE_NAME",
+					Value: "$(NODE_NAME)-virtual",
 				},
 				{
 					Name:  "CONSUL_LOGIN_AUTH_METHOD",
@@ -652,12 +624,8 @@ func TestHandlerContainerInit_namespacesAndPartitionsEnabled(t *testing.T) {
 					Value: "5s",
 				},
 				{
-					Name: "CONSUL_NODE_NAME",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "spec.nodeName",
-						},
-					},
+					Name:  "CONSUL_NODE_NAME",
+					Value: "$(NODE_NAME)-virtual",
 				},
 				{
 					Name:  "CONSUL_LOGIN_AUTH_METHOD",
@@ -700,7 +668,7 @@ func TestHandlerContainerInit_namespacesAndPartitionsEnabled(t *testing.T) {
 			actual := strings.Join(container.Command, " ")
 			require.Equal(t, tt.Cmd, actual)
 			if tt.ExpEnv != nil {
-				require.Equal(t, tt.ExpEnv, container.Env[2:])
+				require.Equal(t, tt.ExpEnv, container.Env[3:])
 			}
 		})
 	}
@@ -903,11 +871,11 @@ func TestHandlerContainerInit_WithTLSAndCustomPorts(t *testing.T) {
 			require.Equal(t, "CONSUL_HTTP_PORT", container.Env[4].Name)
 			require.Equal(t, fmt.Sprintf("%d", w.ConsulConfig.HTTPPort), container.Env[4].Value)
 			if w.TLSEnabled {
-				require.Equal(t, "CONSUL_USE_TLS", container.Env[7].Name)
-				require.Equal(t, "true", container.Env[7].Value)
+				require.Equal(t, "CONSUL_USE_TLS", container.Env[8].Name)
+				require.Equal(t, "true", container.Env[8].Value)
 				if caProvided {
-					require.Equal(t, "CONSUL_CACERT_PEM", container.Env[8].Name)
-					require.Equal(t, "consul-ca-cert", container.Env[8].Value)
+					require.Equal(t, "CONSUL_CACERT_PEM", container.Env[9].Name)
+					require.Equal(t, "consul-ca-cert", container.Env[9].Value)
 				} else {
 					for _, ev := range container.Env {
 						if ev.Name == "CONSUL_CACERT_PEM" {
