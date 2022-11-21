@@ -1054,6 +1054,55 @@ func TestRun_DelayedServers(t *testing.T) {
 	policyExists(t, "agent-token", consul)
 }
 
+// Test that if there is a connection refused error we exit.
+func TestRun_ErrorConnectionRefused(t *testing.T) {
+	t.Parallel()
+	k8s := fake.NewSimpleClientset()
+	setUpK8sServiceAccount(t, k8s, ns)
+	// Start the Consul server.
+	consulServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/acl/bootstrap":
+			w.WriteHeader(500)
+			fmt.Fprintln(w, "dial tcp 23.900.231.169:8501: connect: connection refused")
+		}
+	}))
+	defer consulServer.Close()
+
+	serverURL, err := url.Parse(consulServer.URL)
+	require.NoError(t, err)
+	port, err := strconv.Atoi(serverURL.Port())
+	require.NoError(t, err)
+
+	// Run the command.
+	ui := cli.NewMockUi()
+	cmd := Command{
+		UI:        ui,
+		clientset: k8s,
+		watcher:   test.MockConnMgrForIPAndPort(serverURL.Hostname(), port),
+	}
+
+	done := make(chan bool)
+	var responseCode int
+	go func() {
+		responseCode = cmd.Run([]string{
+			"-timeout=1m",
+			"-resource-prefix=" + resourcePrefix,
+			"-k8s-namespace=" + ns,
+			"-addresses=" + serverURL.Hostname(),
+			"-http-port=" + serverURL.Port(),
+		})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		require.Equal(t, 1, responseCode, ui.ErrorWriter.String())
+	case <-time.After(15 * time.Second):
+		require.FailNow(t, "command did not complete within 15s")
+	}
+}
+
 // Test that if there's no leader, we retry until one is elected.
 func TestRun_NoLeader(t *testing.T) {
 	t.Parallel()

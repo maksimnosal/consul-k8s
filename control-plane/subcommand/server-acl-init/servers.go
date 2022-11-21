@@ -84,6 +84,12 @@ func (c *Command) bootstrapACLs(firstServerAddr, bootTokenSecretName string) (st
 				return nil
 			}
 
+			// Check if we need to re-attempt DNS lookup.
+			if strings.Contains(err.Error(), "connection refused") {
+				unrecoverableErr = errors.New("Cannot reach consul server via DNS, restarting")
+				return nil
+			}
+
 			if isNoLeaderErr(err) {
 				// Return a more descriptive error in the case of no leader
 				// being elected.
