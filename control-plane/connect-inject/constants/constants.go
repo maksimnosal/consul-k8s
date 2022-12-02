@@ -5,7 +5,7 @@ const (
 	ConsulCAFile = "/consul/connect-inject/consul-ca.pem"
 
 	// ProxyDefaultInboundPort is the default inbound port for the proxy.
-	ProxyDefaultInboundPort = 20000
+	ProxyDefaultInboundPort = 15006
 
 	// MetaKeyKubeNS is the meta key name for Kubernetes namespace used for the Consul services.
 	MetaKeyKubeNS = "k8s-namespace"

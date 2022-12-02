@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	sidecarContainer = "consul-dataplane"
+	sidecarContainer = "istio-proxy"
 
 	// exposedPathsLivenessPortsRangeStart is the start of the port range that we will use as
 	// the ListenerPort for the Expose configuration of the proxy registration for a liveness probe.

@@ -190,11 +190,12 @@ func (c *Command) Run(args []string) int {
 	}
 
 	if c.flagRedirectTrafficConfig != "" {
-		err = c.applyTrafficRedirectionRules(proxyService)
-		if err != nil {
-			c.logger.Error("error applying traffic redirection rules", "err", err)
-			return 1
-		}
+		c.logger.Info("skipping applying iptables rules cuz we're using eBPF")
+		//err = c.applyTrafficRedirectionRules(proxyService)
+		//if err != nil {
+		//	c.logger.Error("error applying traffic redirection rules", "err", err)
+		//	return 1
+		//}
 	}
 
 	c.logger.Info("Connect initialization completed")

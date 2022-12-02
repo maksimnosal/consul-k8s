@@ -557,6 +557,7 @@ func (r *Controller) createServiceRegistrations(pod corev1.Pod, serviceEndpoints
 			proxyService.TaggedAddresses = taggedAddresses
 
 			proxyService.Proxy.Mode = api.ProxyModeTransparent
+			proxyService.Proxy.TransparentProxy = &api.TransparentProxyConfig{OutboundListenerPort: 15001}
 		} else {
 			r.Log.Info("skipping syncing service cluster IP to Consul", "name", k8sService.Name, "ns", k8sService.Namespace, "ip", k8sService.Spec.ClusterIP)
 		}

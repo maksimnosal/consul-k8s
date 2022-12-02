@@ -16,7 +16,7 @@ import (
 const (
 	injectInitContainerName      = "consul-connect-inject-init"
 	rootUserAndGroupID           = 0
-	sidecarUserAndGroupID        = 5995
+	sidecarUserAndGroupID        = 1337
 	initContainersUserAndGroupID = 5996
 	netAdminCapability           = "NET_ADMIN"
 )
