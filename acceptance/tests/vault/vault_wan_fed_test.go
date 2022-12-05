@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/consul-k8s/acceptance/framework/config"
 	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
@@ -28,9 +29,6 @@ import (
 // in the secondary that will treat the Vault server in the primary as an external server.
 func TestVault_WANFederationViaGateways(t *testing.T) {
 	cfg := suite.Config()
-	if cfg.UseKind {
-		t.Skipf("Skipping this test because it's currently flaky on kind")
-	}
 	if !cfg.EnableMultiCluster {
 		t.Skipf("skipping this test because -enable-multi-cluster is not set")
 	}
@@ -340,6 +338,7 @@ func TestVault_WANFederationViaGateways(t *testing.T) {
 
 	primaryConsulHelmValues := map[string]string{
 		"global.datacenter": "dc1",
+		"global.image":      "kyleschochenmaier/consul-vault-provider",
 
 		"global.federation.enabled": "true",
 
@@ -414,6 +413,7 @@ func TestVault_WANFederationViaGateways(t *testing.T) {
 	primaryMeshGWAddress := meshGatewayAddress(t, cfg, primaryCtx, consulReleaseName)
 	secondaryConsulHelmValues := map[string]string{
 		"global.datacenter": "dc2",
+		"global.image":      "kyleschochenmaier/consul-vault-provider",
 
 		"global.federation.enabled":            "true",
 		"global.federation.k8sAuthMethodHost":  k8sAuthMethodHost,
@@ -514,6 +514,7 @@ func TestVault_WANFederationViaGateways(t *testing.T) {
 
 	logger.Log(t, "checking that connection is successful")
 	k8s.CheckStaticServerConnectionSuccessful(t, primaryCtx.KubectlOptions(t), StaticClientName, "http://localhost:1234")
+	time.Sleep(time.Minute * 120)
 }
 
 // vaultAddress returns Vault's server URL depending on test configuration.
