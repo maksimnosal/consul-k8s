@@ -241,6 +241,10 @@ spec:
         - name: CONSUL_LOGIN_META  
           value: "component=api-gateway-controller,pod=$(NAMESPACE)/$(POD_NAME)"
         {{- include "consul.consulK8sConsulServerEnvVars" . | nindent 8 }}
+        {{- if and .Values.global.federation.enabled .Values.global.federation.primaryDatacenter }}
+        - name: CONSUL_LOGIN_DATACENTER
+          value: {{ .Values.global.federation.primaryDatacenter }}
+        {{- end }}
         image: {{ .Values.global.imageK8S }}
         volumeMounts:
         - mountPath: /consul/login
@@ -253,6 +257,7 @@ spec:
           readOnly: true
         {{- end }}
         {{- end }}
+        # TODO remove the datacenter flag. Use CONSUL_LOGIN_DATACENTER env var.
         command:
         - "/bin/sh"
         - "-ec"
