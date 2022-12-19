@@ -22,9 +22,15 @@ func TestHandlerConsulDataplaneSidecar(t *testing.T) {
 	cases := map[string]struct {
 		webhookSetupFunc     func(w *MeshWebhook)
 		additionalExpCmdArgs string
+		disableReadiness     bool
 	}{
 		"default": {
 			webhookSetupFunc:     nil,
+			additionalExpCmdArgs: " -tls-disabled -telemetry-prom-scrape-path=/metrics",
+		},
+		"disable readiness probe": {
+			webhookSetupFunc:     nil,
+			disableReadiness:     true,
 			additionalExpCmdArgs: " -tls-disabled -telemetry-prom-scrape-path=/metrics",
 		},
 		"with custom gRPC port": {
@@ -151,7 +157,8 @@ func TestHandlerConsulDataplaneSidecar(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-pod",
 					Annotations: map[string]string{
-						constants.AnnotationService: "foo",
+						constants.AnnotationService:                   "foo",
+						constants.AnnotationDisableSidecarHealthCheck: strconv.FormatBool(c.disableReadiness),
 					},
 				},
 
@@ -213,8 +220,13 @@ func TestHandlerConsulDataplaneSidecar(t *testing.T) {
 				},
 				InitialDelaySeconds: 1,
 			}
-			require.Equal(t, expectedProbe, container.ReadinessProbe)
-			require.Equal(t, expectedProbe, container.LivenessProbe)
+			if c.disableReadiness {
+				require.Nil(t, container.ReadinessProbe)
+				require.Nil(t, container.LivenessProbe)
+			} else {
+				require.Equal(t, expectedProbe, container.ReadinessProbe)
+				require.Equal(t, expectedProbe, container.LivenessProbe)
+			}
 			require.Nil(t, container.StartupProbe)
 			require.Len(t, container.Env, 3)
 			require.Equal(t, container.Env[0].Name, "TMPDIR")

@@ -70,6 +70,10 @@ const (
 	// connections to.
 	AnnotationPort = "consul.hashicorp.com/connect-service-port"
 
+	// AnnotationDisableSidecarHealthCheck disables the liveness and readiness that are
+	// inserted onto sidecar proxies by default.
+	AnnotationDisableSidecarHealthCheck = "consul.hashicorp.com/disable-sidecar-health-check"
+
 	// AnnotationUpstreams is a list of upstreams to register with the
 	// proxy in the format of `<service-name>:<local-port>,...`. The
 	// service name should map to a Consul service namd and the local port

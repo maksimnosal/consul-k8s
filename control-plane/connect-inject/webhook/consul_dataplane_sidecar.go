@@ -47,14 +47,18 @@ func (w *MeshWebhook) consulDataplaneSidecar(namespace corev1.Namespace, pod cor
 		containerName = fmt.Sprintf("%s-%s", sidecarContainer, mpi.serviceName)
 	}
 
-	probe := &corev1.Probe{
-		Handler: corev1.Handler{
-			TCPSocket: &corev1.TCPSocketAction{
-				Port: intstr.FromInt(constants.ProxyDefaultInboundPort + mpi.serviceIndex),
+	var probe *corev1.Probe
+	if v, ok := pod.Annotations[constants.AnnotationDisableSidecarHealthCheck]; !ok || v != "true" {
+		probe = &corev1.Probe{
+			Handler: corev1.Handler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt(constants.ProxyDefaultInboundPort + mpi.serviceIndex),
+				},
 			},
-		},
-		InitialDelaySeconds: 1,
+			InitialDelaySeconds: 1,
+		}
 	}
+
 	container := corev1.Container{
 		Name:      containerName,
 		Image:     w.ImageConsulDataplane,
