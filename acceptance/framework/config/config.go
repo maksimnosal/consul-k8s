@@ -30,6 +30,8 @@ type TestConfig struct {
 	SecondaryKubeContext   string
 	SecondaryKubeNamespace string
 
+	AppNamespace string
+
 	EnableEnterprise  bool
 	EnterpriseLicense string
 

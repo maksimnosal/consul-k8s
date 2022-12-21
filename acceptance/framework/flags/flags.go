@@ -20,6 +20,8 @@ type TestFlags struct {
 	flagSecondaryKubecontext string
 	flagSecondaryNamespace   string
 
+	flagAppNamespace string
+
 	flagEnableEnterprise  bool
 	flagEnterpriseLicense string
 
@@ -78,6 +80,8 @@ func (t *TestFlags) init() {
 	flag.StringVar(&t.flagSecondaryKubecontext, "secondary-kubecontext", "", "The name of the Kubernetes context for the secondary cluster to use. "+
 		"If this is blank, the context set as the current context will be used by default.")
 	flag.StringVar(&t.flagSecondaryNamespace, "secondary-namespace", "", "The Kubernetes namespace to use in the secondary k8s cluster.")
+
+	flag.StringVar(&t.flagAppNamespace, "app-namespace", "", "The Kubernetes namespace to use when deploying service mesh applications.")
 
 	flag.BoolVar(&t.flagEnableEnterprise, "enable-enterprise", false,
 		"If true, the test suite will run tests for enterprise features. "+
@@ -150,6 +154,7 @@ func (t *TestFlags) TestConfigFromFlags() *config.TestConfig {
 		SecondaryKubeContext:   t.flagSecondaryKubecontext,
 		SecondaryKubeNamespace: t.flagSecondaryNamespace,
 
+		AppNamespace:      t.flagAppNamespace,
 		EnableEnterprise:  t.flagEnableEnterprise,
 		EnterpriseLicense: t.flagEnterpriseLicense,
 
