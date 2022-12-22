@@ -29,6 +29,17 @@ rules:
   - use
 {{- end }}
 {{- else}}
-rules: []
+rules:
+- apiGroups: ["consul.hashicorp.com"]
+  resources: ["fakes"]
+  # resourceNames:
+  # - fake
+  verbs:
+  - create
+  - get
+  - list
+  - update
+  - delete
+  - watch
 {{- end }}
 {{- end }}
