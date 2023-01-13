@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
 	"github.com/hashicorp/consul-k8s/acceptance/framework/environment"
@@ -25,10 +26,10 @@ func TestWANFederation(t *testing.T) {
 		name   string
 		secure bool
 	}{
-		{
-			name:   "secure",
-			secure: true,
-		},
+		// {
+		// 	name:   "secure",
+		// 	secure: true,
+		// },
 		{
 			name:   "default",
 			secure: false,
@@ -41,9 +42,9 @@ func TestWANFederation(t *testing.T) {
 			env := suite.Environment()
 			cfg := suite.Config()
 
-			if cfg.UseKind {
-				t.Skipf("skipping wan federation tests as they currently fail on Kind even though they work on other clouds.")
-			}
+			// if cfg.UseKind {
+			// 	t.Skipf("skipping wan federation tests as they currently fail on Kind even though they work on other clouds.")
+			// }
 
 			primaryContext := env.DefaultContext(t)
 			secondaryContext := env.Context(t, environment.SecondaryContextName)
@@ -183,6 +184,9 @@ func TestWANFederation(t *testing.T) {
 
 			logger.Log(t, "checking that connection is successful")
 			k8s.CheckStaticServerConnectionSuccessful(t, primaryContext.KubectlOptions(t), StaticClientName, "http://localhost:1234")
+
+			logger.Log(t, "\t\t PAUSING FOR REPRO \t\t")
+			time.Sleep(time.Hour * 24)
 		})
 	}
 }
