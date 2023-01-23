@@ -5,11 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/consul-k8s/cli/common"
@@ -56,7 +53,7 @@ func TestFlagParsingFails(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c := setupCommand(bytes.NewBuffer([]byte{}))
 			c.kubernetes = fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{fakePod}})
-			c.logLevelFetcher = func(context.Context, common.PortForwarder) (LoggerConfig, error) {
+			c.envoyLoggingCaller = func(context.Context, common.PortForwarder, ...string) (map[string]string, error) {
 				return testLogConfig, nil
 			}
 
@@ -84,6 +81,11 @@ func TestFlagParsingSucceeds(t *testing.T) {
 			podNamespace: "another",
 			out:          0,
 		},
+		"With single pod name level": {
+			args:         []string{podName, "-l", "warning"},
+			podNamespace: "default",
+			out:          0,
+		},
 	}
 
 	for name, tc := range testCases {
@@ -97,7 +99,7 @@ func TestFlagParsingSucceeds(t *testing.T) {
 
 			c := setupCommand(bytes.NewBuffer([]byte{}))
 			c.kubernetes = fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{fakePod}})
-			c.logLevelFetcher = func(context.Context, common.PortForwarder) (LoggerConfig, error) {
+			c.envoyLoggingCaller = func(context.Context, common.PortForwarder, ...string) (map[string]string, error) {
 				return testLogConfig, nil
 			}
 
@@ -107,7 +109,7 @@ func TestFlagParsingSucceeds(t *testing.T) {
 	}
 }
 
-func TestOutputForGettingLogLevel(t *testing.T) {
+func TestOutputForGettingLogLevels(t *testing.T) {
 	t.Parallel()
 	podName := "now-this-is-pod-racing"
 	expectedHeader := fmt.Sprintf("Envoy log configuration for %s in namespace default:", podName)
@@ -120,12 +122,49 @@ func TestOutputForGettingLogLevel(t *testing.T) {
 
 	buf := bytes.NewBuffer([]byte{})
 	c := setupCommand(buf)
-	c.logLevelFetcher = func(context.Context, common.PortForwarder) (LoggerConfig, error) {
+	newLogLevel := "warning"
+	config := make(map[string]string, len(testLogConfig))
+	for logger := range testLogConfig {
+		config[logger] = newLogLevel
+	}
+
+	c.envoyLoggingCaller = func(context.Context, common.PortForwarder, ...string) (map[string]string, error) {
+		return config, nil
+	}
+	c.kubernetes = fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{fakePod}})
+
+	args := []string{podName, "-l", newLogLevel}
+	out := c.Run(args)
+	require.Equal(t, 0, out)
+
+	actual := buf.String()
+
+	require.Regexp(t, expectedHeader, actual)
+	require.Regexp(t, "Log Levels for now-this-is-pod-racing", actual)
+	for logger, level := range config {
+		require.Regexp(t, regexp.MustCompile(logger+`.*`+level), actual)
+	}
+}
+
+func TestOutputForSettingLogLevels(t *testing.T) {
+	t.Parallel()
+	podName := "now-this-is-pod-racing"
+	expectedHeader := fmt.Sprintf("Envoy log configuration for %s in namespace default:", podName)
+	fakePod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: "default",
+		},
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+	c := setupCommand(buf)
+	c.envoyLoggingCaller = func(context.Context, common.PortForwarder, ...string) (map[string]string, error) {
 		return testLogConfig, nil
 	}
 	c.kubernetes = fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{fakePod}})
 
-	args := []string{podName}
+	args := []string{podName, "-l", "warning"}
 	out := c.Run(args)
 	require.Equal(t, 0, out)
 
@@ -149,34 +188,24 @@ func TestHelp(t *testing.T) {
 	require.Regexp(t, expectedUsage, actual)
 }
 
-func TestFetchLogLevel(t *testing.T) {
-	t.Parallel()
-	rawLogLevels, err := os.ReadFile("testdata/fetch_debug_levels.txt")
-	require.NoError(t, err)
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(rawLogLevels)
-	}))
+func setupCommand(buf io.Writer) *LogLevelCommand {
+	log := hclog.New(&hclog.LoggerOptions{
+		Name:   "test",
+		Level:  hclog.Debug,
+		Output: os.Stdout,
+	})
 
-	defer mockServer.Close()
-
-	mpf := &mockPortForwarder{
-		openBehavior: func(ctx context.Context) (string, error) {
-			return strings.Replace(mockServer.URL, "http://", "", 1), nil
+	command := &LogLevelCommand{
+		BaseCommand: &common.BaseCommand{
+			Log: log,
+			UI:  terminal.NewUI(context.Background(), buf),
 		},
 	}
-	logLevels, err := FetchLogLevel(context.Background(), mpf)
-	require.NoError(t, err)
-	require.Equal(t, testLogConfig, logLevels)
+	command.init()
+	return command
 }
 
-type mockPortForwarder struct {
-	openBehavior func(context.Context) (string, error)
-}
-
-func (m *mockPortForwarder) Open(ctx context.Context) (string, error) { return m.openBehavior(ctx) }
-func (m *mockPortForwarder) Close()                                   {}
-
-var testLogConfig = LoggerConfig{
+var testLogConfig = map[string]string{
 	"admin":                     "debug",
 	"alternate_protocols_cache": "debug",
 	"aws":                       "debug",
@@ -234,21 +263,4 @@ var testLogConfig = LoggerConfig{
 	"udp":                       "debug",
 	"wasm":                      "debug",
 	"websocket":                 "debug",
-}
-
-func setupCommand(buf io.Writer) *LogLevelCommand {
-	log := hclog.New(&hclog.LoggerOptions{
-		Name:   "test",
-		Level:  hclog.Debug,
-		Output: os.Stdout,
-	})
-
-	command := &LogLevelCommand{
-		BaseCommand: &common.BaseCommand{
-			Log: log,
-			UI:  terminal.NewUI(context.Background(), buf),
-		},
-	}
-	command.init()
-	return command
 }

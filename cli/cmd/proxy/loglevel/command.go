@@ -1,15 +1,13 @@
 package loglevel
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"sync"
 
+	"github.com/hashicorp/consul-k8s/cli/cmd/proxy/envoy"
 	"github.com/hashicorp/consul-k8s/cli/common"
 	"github.com/hashicorp/consul-k8s/cli/common/flag"
 	"github.com/hashicorp/consul-k8s/cli/common/terminal"
@@ -24,16 +22,14 @@ import (
 const (
 	defaultAdminPort    = 19000
 	flagNameNamespace   = "namespace"
+	flagNameLevel       = "level"
 	flagNameKubeConfig  = "kubeconfig"
 	flagNameKubeContext = "context"
 )
 
-type LoggerConfig map[string]string
+var ErrIncorrectArgFormat = errors.New("Exactly one positional argument is required: <pod-name>")
 
-var (
-	ErrIncorrectArgFormat = errors.New("Exactly one positional argument is required: <pod-name>")
-	ErrNoLoggersReturned  = errors.New("No loggers were returned from Envoy")
-)
+type LoggerConfig map[string]string
 
 var levelToColor = map[string]string{
 	"trace":    terminal.Green,
@@ -54,13 +50,14 @@ type LogLevelCommand struct {
 	// Command Flags
 	podName     string
 	namespace   string
+	level       string
 	kubeConfig  string
 	kubeContext string
 
-	once            sync.Once
-	help            string
-	restConfig      *rest.Config
-	logLevelFetcher func(context.Context, common.PortForwarder) (LoggerConfig, error)
+	once               sync.Once
+	help               string
+	restConfig         *rest.Config
+	envoyLoggingCaller func(context.Context, common.PortForwarder, ...string) (map[string]string, error)
 }
 
 func (l *LogLevelCommand) init() {
@@ -72,6 +69,13 @@ func (l *LogLevelCommand) init() {
 		Target:  &l.namespace,
 		Usage:   "The namespace where the target Pod can be found.",
 		Aliases: []string{"n"},
+	})
+
+	f.StringVar(&flag.StringVar{
+		Name:    flagNameLevel,
+		Target:  &l.level,
+		Usage:   "The level for the logger. Can be either `-level warning` to change all loggers to warning, or a comma delineated list of loggers with level can be passed like `-level grpc:warning,http:info` to only modify specific loggers.",
+		Aliases: []string{"l"},
 	})
 
 	f = l.set.NewSet("Global Options")
@@ -103,8 +107,8 @@ func (l *LogLevelCommand) Run(args []string) int {
 		return l.logOutputAndDie(err)
 	}
 
-	if l.logLevelFetcher == nil {
-		l.logLevelFetcher = FetchLogLevel
+	if l.envoyLoggingCaller == nil {
+		l.envoyLoggingCaller = envoy.CallLoggingEndpoint
 	}
 
 	err = l.initKubernetes()
@@ -117,11 +121,20 @@ func (l *LogLevelCommand) Run(args []string) int {
 		return l.logOutputAndDie(err)
 	}
 
-	logLevels, err := l.fetchLogLevels(adminPorts)
+	if l.level != "" {
+		err := l.setLogLevels(adminPorts)
+		if err != nil {
+			return l.logOutputAndDie(err)
+		}
+
+		return 0
+	}
+
+	err = l.listLevels(adminPorts)
 	if err != nil {
 		return l.logOutputAndDie(err)
 	}
-	l.outputLevels(logLevels)
+
 	return 0
 }
 
@@ -150,6 +163,7 @@ func (l *LogLevelCommand) parseFlags(args []string) error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -222,6 +236,15 @@ func (l *LogLevelCommand) fetchAdminPorts() (map[string]int, error) {
 	return adminPorts, nil
 }
 
+func (l *LogLevelCommand) listLevels(adminPorts map[string]int) error {
+	logLevels, err := l.fetchLogLevels(adminPorts)
+	if err != nil {
+		return err
+	}
+	l.outputLevels(logLevels)
+	return nil
+}
+
 func (l *LogLevelCommand) fetchLogLevels(adminPorts map[string]int) (map[string]LoggerConfig, error) {
 	loggers := make(map[string]LoggerConfig, 0)
 
@@ -234,7 +257,7 @@ func (l *LogLevelCommand) fetchLogLevels(adminPorts map[string]int) (map[string]
 			RestConfig: l.restConfig,
 		}
 
-		logLevels, err := l.logLevelFetcher(l.Ctx, &pf)
+		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, "")
 		if err != nil {
 			return loggers, err
 		}
@@ -243,51 +266,42 @@ func (l *LogLevelCommand) fetchLogLevels(adminPorts map[string]int) (map[string]
 	return loggers, nil
 }
 
-// FetchLogLevel requests the logging endpoint from Envoy Admin Interface for a given port
-// more can be read about that endpoint https://www.envoyproxy.io/docs/envoy/latest/operations/admin#post--logging
-func FetchLogLevel(ctx context.Context, portForward common.PortForwarder) (LoggerConfig, error) {
-	endpoint, err := portForward.Open(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (l *LogLevelCommand) setLogLevels(adminPorts map[string]int) error {
+	loggers := make(map[string]LoggerConfig, 0)
+	params := l.parseParams()
 
-	defer portForward.Close()
-
-	// this endpoint does not support returning json, so we've gotta parse the plain text
-	response, err := http.Post(fmt.Sprintf("http://%s/logging", endpoint), "text/plain", bytes.NewBuffer([]byte{}))
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reach envoy: %v", err)
-	}
-
-	if response.StatusCode >= 400 {
-		return nil, fmt.Errorf("call to envoy failed with status code: %d, and message: %s", response.StatusCode, body)
-	}
-
-	loggers := strings.Split(string(body), "\n")
-	if len(loggers) == 0 {
-		return nil, ErrNoLoggersReturned
-	}
-
-	logLevels := make(map[string]string)
-	var name string
-	var level string
-
-	// the first line here is just a header
-	for _, logger := range loggers[1:] {
-		if len(logger) == 0 {
-			continue
+	for name, port := range adminPorts {
+		pf := common.PortForward{
+			Namespace:  l.namespace,
+			PodName:    l.podName,
+			RemotePort: port,
+			KubeClient: l.kubernetes,
+			RestConfig: l.restConfig,
 		}
-		fmt.Sscanf(logger, "%s %s", &name, &level)
-		name = strings.TrimRight(name, ":")
-		logLevels[name] = level
+
+		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, params)
+		if err != nil {
+			return err
+		}
+		loggers[name] = logLevels
+	}
+	l.outputLevels(loggers)
+	return nil
+}
+
+func (l *LogLevelCommand) parseParams() string {
+	// contains at least one specific logger change
+	params := l.level
+	if !strings.Contains(params, ":") {
+		return fmt.Sprintf("level=%s", params)
 	}
 
-	return logLevels, nil
+	loggerChanges := strings.Split(params, ",")
+	if len(loggerChanges) == 1 {
+		return strings.ReplaceAll(loggerChanges[0], ":", "=")
+	}
+
+	return fmt.Sprintf("paths=%s", strings.Join(loggerChanges, ","))
 }
 
 func (l *LogLevelCommand) outputLevels(logLevels map[string]LoggerConfig) {
