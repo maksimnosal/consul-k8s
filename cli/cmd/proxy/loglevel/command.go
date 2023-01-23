@@ -57,7 +57,7 @@ type LogLevelCommand struct {
 	once               sync.Once
 	help               string
 	restConfig         *rest.Config
-	envoyLoggingCaller func(context.Context, common.PortForwarder, ...string) (map[string]string, error)
+	envoyLoggingCaller func(context.Context, common.PortForwarder, string) (map[string]string, error)
 }
 
 func (l *LogLevelCommand) init() {
@@ -268,7 +268,6 @@ func (l *LogLevelCommand) fetchLogLevels(adminPorts map[string]int) (map[string]
 
 func (l *LogLevelCommand) setLogLevels(adminPorts map[string]int) error {
 	loggers := make(map[string]LoggerConfig, 0)
-	params := l.parseParams()
 
 	for name, port := range adminPorts {
 		pf := common.PortForward{
@@ -279,7 +278,7 @@ func (l *LogLevelCommand) setLogLevels(adminPorts map[string]int) error {
 			RestConfig: l.restConfig,
 		}
 
-		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, params)
+		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, l.level)
 		if err != nil {
 			return err
 		}
@@ -287,21 +286,6 @@ func (l *LogLevelCommand) setLogLevels(adminPorts map[string]int) error {
 	}
 	l.outputLevels(loggers)
 	return nil
-}
-
-func (l *LogLevelCommand) parseParams() string {
-	// contains at least one specific logger change
-	params := l.level
-	if !strings.Contains(params, ":") {
-		return fmt.Sprintf("level=%s", params)
-	}
-
-	loggerChanges := strings.Split(params, ",")
-	if len(loggerChanges) == 1 {
-		return strings.ReplaceAll(loggerChanges[0], ":", "=")
-	}
-
-	return fmt.Sprintf("paths=%s", strings.Join(loggerChanges, ","))
 }
 
 func (l *LogLevelCommand) outputLevels(logLevels map[string]LoggerConfig) {

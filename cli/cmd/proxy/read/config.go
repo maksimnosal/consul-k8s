@@ -1,6 +1,7 @@
 package read
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -67,6 +68,72 @@ type Secret struct {
 	Name        string
 	Type        string
 	LastUpdated string
+}
+
+// CallLoggingEndpoint requests the logging endpoint from Envoy Admin Interface for a given port
+// more can be read about that endpoint https://www.envoyproxy.io/docs/envoy/latest/operations/admin#post--logging
+func CallLoggingEndpoint(ctx context.Context, portForward common.PortForwarder, params string) (map[string]string, error) {
+	params = parseParams(params)
+	endpoint, err := portForward.Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer portForward.Close()
+
+	// this endpoint does not support returning json, so we've gotta parse the plain text
+	response, err := http.Post(fmt.Sprintf("http://%s/logging?%s", endpoint, params), "text/plain", bytes.NewBuffer([]byte{}))
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reach envoy: %v", err)
+	}
+
+	if response.StatusCode >= 400 {
+		return nil, fmt.Errorf("call to envoy failed with status code: %d, and message: %s", response.StatusCode, body)
+	}
+
+	loggers := strings.Split(string(body), "\n")
+	if len(loggers) == 0 {
+		return nil, ErrNoLoggersReturned
+	}
+
+	logLevels := make(map[string]string)
+	var name string
+	var level string
+
+	// the first line here is just a header
+	for _, logger := range loggers[1:] {
+		if len(logger) == 0 {
+			continue
+		}
+		fmt.Sscanf(logger, "%s %s", &name, &level)
+		name = strings.TrimRight(name, ":")
+		logLevels[name] = level
+	}
+
+	return logLevels, nil
+}
+
+func parseParams(params string) string {
+	if len(params) == 0 {
+		return ""
+	}
+
+	// contains at least one specific logger change
+	if !strings.Contains(params, ":") {
+		return fmt.Sprintf("level=%s", params)
+	}
+
+	loggerChanges := strings.Split(params, ",")
+	if len(loggerChanges) == 1 {
+		return strings.ReplaceAll(loggerChanges[0], ":", "=")
+	}
+
+	return fmt.Sprintf("paths=%s", strings.Join(loggerChanges, ","))
 }
 
 // FetchConfig opens a port forward to the Envoy admin API and fetches the
