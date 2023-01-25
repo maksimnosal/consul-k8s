@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/hashicorp/consul-k8s/cli/common"
 	"github.com/hashicorp/consul-k8s/cli/common/flag"
@@ -57,13 +56,13 @@ type LogLevelCommand struct {
 	kubeConfig  string
 	kubeContext string
 
-	once            sync.Once
 	help            string
 	restConfig      *rest.Config
 	logLevelFetcher func(context.Context, common.PortForwarder) (LoggerConfig, error)
 }
 
-func (l *LogLevelCommand) init() {
+func NewLogLevelCommand(baseCommand *common.BaseCommand) *LogLevelCommand {
+	l := &LogLevelCommand{BaseCommand: baseCommand}
 	l.Log.ResetNamed("loglevel")
 	l.set = flag.NewSets()
 	f := l.set.NewSet("Command Options")
@@ -88,10 +87,10 @@ func (l *LogLevelCommand) init() {
 	})
 
 	l.help = l.set.Help()
+	return l
 }
 
 func (l *LogLevelCommand) Run(args []string) int {
-	l.once.Do(l.init)
 	defer common.CloseWithError(l.BaseCommand)
 
 	err := l.parseFlags(args)
@@ -304,7 +303,6 @@ func (l *LogLevelCommand) outputLevels(logLevels map[string]LoggerConfig) {
 }
 
 func (l *LogLevelCommand) Help() string {
-	l.once.Do(l.init)
 	return fmt.Sprintf("%s\n\nUsage: consul-k8s proxy log <pod-name> [flags]\n\n%s", l.Synopsis(), l.help)
 }
 

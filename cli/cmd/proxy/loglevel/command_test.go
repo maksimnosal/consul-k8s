@@ -243,12 +243,11 @@ func setupCommand(buf io.Writer) *LogLevelCommand {
 		Output: os.Stdout,
 	})
 
-	command := &LogLevelCommand{
-		BaseCommand: &common.BaseCommand{
+	command := NewLogLevelCommand(
+		&common.BaseCommand{
 			Log: log,
 			UI:  terminal.NewUI(context.Background(), buf),
 		},
-	}
-	command.init()
+	)
 	return command
 }
