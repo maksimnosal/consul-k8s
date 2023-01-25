@@ -7,9 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/consul-k8s/cli/common"
-	"github.com/hashicorp/consul-k8s/cli/common/flag"
-	"github.com/hashicorp/consul-k8s/cli/common/terminal"
 	"github.com/posener/complete"
 	helmCLI "helm.sh/helm/v3/pkg/cli"
 	"k8s.io/apimachinery/pkg/api/validation"
@@ -17,6 +14,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/strings/slices"
+
+	"github.com/hashicorp/consul-k8s/cli/common"
+	"github.com/hashicorp/consul-k8s/cli/common/flag"
+	"github.com/hashicorp/consul-k8s/cli/common/terminal"
 )
 
 // defaultAdminPort is the port where the Envoy admin API is exposed.
@@ -496,8 +497,10 @@ func (c *ReadCommand) outputClustersTable(clusters []Cluster) {
 	c.UI.Output(fmt.Sprintf("Clusters (%d)", len(clusters)), terminal.WithHeaderStyle())
 	table := terminal.NewTable("Name", "FQDN", "Endpoints", "Type", "Last Updated")
 	for _, cluster := range clusters {
-		table.AddRow([]string{cluster.Name, cluster.FullyQualifiedDomainName, strings.Join(cluster.Endpoints, ", "),
-			cluster.Type, cluster.LastUpdated}, []string{})
+		table.AddRow([]string{
+			cluster.Name, cluster.FullyQualifiedDomainName, strings.Join(cluster.Endpoints, ", "),
+			cluster.Type, cluster.LastUpdated,
+		}, []string{})
 	}
 	c.UI.Table(table)
 	c.UI.Output("")

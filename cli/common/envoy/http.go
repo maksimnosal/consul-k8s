@@ -73,7 +73,6 @@ type Secret struct {
 // CallLoggingEndpoint requests the logging endpoint from Envoy Admin Interface for a given port
 // more can be read about that endpoint https://www.envoyproxy.io/docs/envoy/latest/operations/admin#post--logging
 func CallLoggingEndpoint(ctx context.Context, portForward common.PortForwarder, params string) (map[string]string, error) {
-	params = parseParams(params)
 	endpoint, err := portForward.Open(ctx)
 	if err != nil {
 		return nil, err
@@ -82,7 +81,7 @@ func CallLoggingEndpoint(ctx context.Context, portForward common.PortForwarder, 
 	defer portForward.Close()
 
 	// this endpoint does not support returning json, so we've gotta parse the plain text
-	response, err := http.Post(fmt.Sprintf("http://%s/logging?%s", endpoint, params), "text/plain", bytes.NewBuffer([]byte{}))
+	response, err := http.Post(fmt.Sprintf("http://%s/logging%s", endpoint, params), "text/plain", bytes.NewBuffer([]byte{}))
 	if err != nil {
 		return nil, err
 	}
@@ -116,24 +115,6 @@ func CallLoggingEndpoint(ctx context.Context, portForward common.PortForwarder, 
 	}
 
 	return logLevels, nil
-}
-
-func parseParams(params string) string {
-	if len(params) == 0 {
-		return ""
-	}
-
-	// contains at least one specific logger change
-	if !strings.Contains(params, ":") {
-		return fmt.Sprintf("level=%s", params)
-	}
-
-	loggerChanges := strings.Split(params, ",")
-	if len(loggerChanges) == 1 {
-		return strings.ReplaceAll(loggerChanges[0], ":", "=")
-	}
-
-	return fmt.Sprintf("paths=%s", strings.Join(loggerChanges, ","))
 }
 
 // FetchConfig opens a port forward to the Envoy admin API and fetches the

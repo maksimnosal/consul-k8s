@@ -5,8 +5,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hashicorp/consul-k8s/cli/common/terminal"
 	"github.com/stretchr/testify/require"
+
+	"github.com/hashicorp/consul-k8s/cli/common/envoy"
+	"github.com/hashicorp/consul-k8s/cli/common/terminal"
 )
 
 func TestFormatClusters(t *testing.T) {
@@ -21,7 +23,7 @@ func TestFormatClusters(t *testing.T) {
 		"server.*server.default.dc1.internal.bc3815c2-1a0f-f3ff-a2e9-20d791f08d00.consul.*EDS.*2022-06-09T00:39:12\\.754Z",
 	}
 
-	given := []Cluster{
+	given := []envoy.Cluster{
 		{
 			Name:                     "local_agent",
 			FullyQualifiedDomainName: "local_agent",
@@ -97,7 +99,7 @@ func TestFormatEndpoints(t *testing.T) {
 		"192.168.65.131:20000.*1.00.*HEALTHY",
 	}
 
-	given := []Endpoint{
+	given := []envoy.Endpoint{
 		{
 			Address: "192.168.79.187:8502",
 			Cluster: "local_agent",
@@ -174,7 +176,7 @@ func TestFormatListeners(t *testing.T) {
 		"Any.*-> original-destination",
 	}
 
-	given := []Listener{
+	given := []envoy.Listener{
 		{
 			Name:    "public_listener",
 			Address: "192.168.69.179:20000",

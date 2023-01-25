@@ -9,16 +9,17 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hashicorp/consul-k8s/cli/common"
-	cmnFlag "github.com/hashicorp/consul-k8s/cli/common/flag"
-	"github.com/hashicorp/consul-k8s/cli/common/terminal"
-	"github.com/hashicorp/go-hclog"
 	"github.com/posener/complete"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/hashicorp/consul-k8s/cli/common"
+	cmnFlag "github.com/hashicorp/consul-k8s/cli/common/flag"
+	"github.com/hashicorp/consul-k8s/cli/common/terminal"
+	"github.com/hashicorp/go-hclog"
 )
 
 func TestFlagParsing(t *testing.T) {
@@ -65,38 +66,48 @@ func TestReadCommandOutput(t *testing.T) {
 	// These regular expressions must be present in the output.
 	expectedHeader := fmt.Sprintf("Envoy configuration for %s in namespace default:", podName)
 	expected := map[string][]string{
-		"-clusters": {"==> Clusters \\(5\\)",
+		"-clusters": {
+			"==> Clusters \\(5\\)",
 			"Name.*FQDN.*Endpoints.*Type.*Last Updated",
 			"local_agent.*192\\.168\\.79\\.187:8502.*STATIC.*2022-05-13T04:22:39\\.553Z",
 			"local_app.*127\\.0\\.0\\.1:8080.*STATIC.*2022-05-13T04:22:39\\.655Z",
 			"client.*client\\.default\\.dc1\\.internal\\.bc3815c2-1a0f-f3ff-a2e9-20d791f08d00\\.consul.*EDS",
 			"frontend.*frontend\\.default\\.dc1\\.internal\\.bc3815c2-1a0f-f3ff-a2e9-20d791f08d00\\.consul",
-			"original-destination.*ORIGINAL_DST"},
+			"original-destination.*ORIGINAL_DST",
+		},
 
-		"-endpoints": {"==> Endpoints \\(6\\)",
+		"-endpoints": {
+			"==> Endpoints \\(6\\)",
 			"Address:Port.*Cluster.*Weight.*Status",
 			"192.168.79.187:8502.*local_agent.*1.00.*HEALTHY",
 			"127.0.0.1:8080.*local_app.*1.00.*HEALTHY",
 			"192.168.18.110:20000.*client.*1.00.*HEALTHY",
 			"192.168.52.101:20000.*client.*1.00.*HEALTHY",
 			"192.168.65.131:20000.*client.*1.00.*HEALTHY",
-			"192.168.63.120:20000.*frontend.*1.00.*HEALTHY"},
+			"192.168.63.120:20000.*frontend.*1.00.*HEALTHY",
+		},
 
-		"-listeners": {"==> Listeners \\(2\\)",
+		"-listeners": {
+			"==> Listeners \\(2\\)",
 			"Name.*Address:Port.*Direction.*Filter Chain Match.*Filters.*Last Updated",
 			"public_listener.*192\\.168\\.69\\.179:20000.*INBOUND.*Any.*\\* -> local_app/",
 			"outbound_listener.*127.0.0.1:15001.*OUTBOUND.*10\\.100\\.134\\.173/32, 240\\.0\\.0\\.3/32.*TCP: -> client",
 			"10\\.100\\.31\\.2/32, 240\\.0\\.0\\.5/32.*TCP: -> frontend",
-			"Any.*TCP: -> original-destination"},
+			"Any.*TCP: -> original-destination",
+		},
 
-		"-routes": {"==> Routes \\(1\\)",
+		"-routes": {
+			"==> Routes \\(1\\)",
 			"Name.*Destination Cluster.*Last Updated",
-			"public_listener.*local_app/"},
+			"public_listener.*local_app/",
+		},
 
-		"-secrets": {"==> Secrets \\(2\\)",
+		"-secrets": {
+			"==> Secrets \\(2\\)",
 			"Name.*Type.*Last Updated",
 			"default.*Dynamic Active",
-			"ROOTCA.*Dynamic Warming"},
+			"ROOTCA.*Dynamic Warming",
+		},
 	}
 
 	cases := map[string][]string{

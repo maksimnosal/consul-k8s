@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/consul-k8s/cli/cmd/proxy/envoy"
 	"github.com/hashicorp/consul-k8s/cli/common"
+	"github.com/hashicorp/consul-k8s/cli/common/envoy"
 	"github.com/hashicorp/consul-k8s/cli/common/flag"
 	"github.com/hashicorp/consul-k8s/cli/common/terminal"
 	"github.com/posener/complete"
@@ -121,16 +121,7 @@ func (l *LogLevelCommand) Run(args []string) int {
 		return l.logOutputAndDie(err)
 	}
 
-	if l.level != "" {
-		err := l.setLogLevels(adminPorts)
-		if err != nil {
-			return l.logOutputAndDie(err)
-		}
-
-		return 0
-	}
-
-	err = l.listLevels(adminPorts)
+	err = l.fetchOrSetLogLevels(adminPorts)
 	if err != nil {
 		return l.logOutputAndDie(err)
 	}
@@ -236,16 +227,7 @@ func (l *LogLevelCommand) fetchAdminPorts() (map[string]int, error) {
 	return adminPorts, nil
 }
 
-func (l *LogLevelCommand) listLevels(adminPorts map[string]int) error {
-	logLevels, err := l.fetchLogLevels(adminPorts)
-	if err != nil {
-		return err
-	}
-	l.outputLevels(logLevels)
-	return nil
-}
-
-func (l *LogLevelCommand) fetchLogLevels(adminPorts map[string]int) (map[string]LoggerConfig, error) {
+func (l *LogLevelCommand) fetchOrSetLogLevels(adminPorts map[string]int) error {
 	loggers := make(map[string]LoggerConfig, 0)
 
 	for name, port := range adminPorts {
@@ -256,36 +238,36 @@ func (l *LogLevelCommand) fetchLogLevels(adminPorts map[string]int) (map[string]
 			KubeClient: l.kubernetes,
 			RestConfig: l.restConfig,
 		}
-
-		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, "")
-		if err != nil {
-			return loggers, err
-		}
-		loggers[name] = logLevels
-	}
-	return loggers, nil
-}
-
-func (l *LogLevelCommand) setLogLevels(adminPorts map[string]int) error {
-	loggers := make(map[string]LoggerConfig, 0)
-
-	for name, port := range adminPorts {
-		pf := common.PortForward{
-			Namespace:  l.namespace,
-			PodName:    l.podName,
-			RemotePort: port,
-			KubeClient: l.kubernetes,
-			RestConfig: l.restConfig,
-		}
-
-		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, l.level)
+		// if l.level is set (so not an empty string) this will set a log level(s), otherwise
+		// this will just fetch the log levels
+		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, parseParams(l.level))
 		if err != nil {
 			return err
 		}
 		loggers[name] = logLevels
 	}
+
 	l.outputLevels(loggers)
 	return nil
+}
+
+func parseParams(params string) string {
+	if len(params) == 0 {
+		return ""
+	}
+
+	// contains at least one specific logger change
+	if !strings.Contains(params, ":") {
+		return fmt.Sprintf("?level=%s", params)
+	}
+
+	// contains only 1 specific logger change
+	loggerChanges := strings.Split(params, ",")
+	if len(loggerChanges) == 1 {
+		return fmt.Sprintf("?%s", strings.ReplaceAll(loggerChanges[0], ":", "="))
+	}
+
+	return fmt.Sprintf("?paths=%s", strings.Join(loggerChanges, ","))
 }
 
 func (l *LogLevelCommand) outputLevels(logLevels map[string]LoggerConfig) {

@@ -4,20 +4,23 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/consul-k8s/cli/common/envoy"
 	"github.com/hashicorp/consul-k8s/cli/common/terminal"
 )
 
-func formatClusters(clusters []Cluster) *terminal.Table {
+func formatClusters(clusters []envoy.Cluster) *terminal.Table {
 	table := terminal.NewTable("Name", "FQDN", "Endpoints", "Type", "Last Updated")
 	for _, cluster := range clusters {
-		table.AddRow([]string{cluster.Name, cluster.FullyQualifiedDomainName, strings.Join(cluster.Endpoints, ", "),
-			cluster.Type, cluster.LastUpdated}, []string{})
+		table.AddRow([]string{
+			cluster.Name, cluster.FullyQualifiedDomainName, strings.Join(cluster.Endpoints, ", "),
+			cluster.Type, cluster.LastUpdated,
+		}, []string{})
 	}
 
 	return table
 }
 
-func formatEndpoints(endpoints []Endpoint) *terminal.Table {
+func formatEndpoints(endpoints []envoy.Endpoint) *terminal.Table {
 	table := terminal.NewTable("Address:Port", "Cluster", "Weight", "Status")
 	for _, endpoint := range endpoints {
 		var statusColor string
@@ -35,7 +38,7 @@ func formatEndpoints(endpoints []Endpoint) *terminal.Table {
 	return table
 }
 
-func formatListeners(listeners []Listener) *terminal.Table {
+func formatListeners(listeners []envoy.Listener) *terminal.Table {
 	table := terminal.NewTable("Name", "Address:Port", "Direction", "Filter Chain Match", "Filters", "Last Updated")
 	for _, listener := range listeners {
 		for index, filter := range listener.FilterChain {
