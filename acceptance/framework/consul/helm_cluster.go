@@ -517,7 +517,7 @@ func defaultValues() map[string]string {
 		"dns.enabled": "false",
 
 		// Enable trace logs for servers and clients.
-		"server.extraConfig": `"{\"log_level\": \"TRACE\", \"raft_logstore\": { \"backend\": \"wal\"}}"`,
+		"server.extraConfig": `"{\"log_level\": \"TRACE\", \"raft_logstore\": { \"backend\": \"wal\", \"verification\": { \"enabled\": true }}}"`,
 		"client.extraConfig": `"{\"log_level\": \"TRACE\"}"`,
 	}
 	return values
