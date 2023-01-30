@@ -57,7 +57,7 @@ type LogLevelCommand struct {
 	once               sync.Once
 	help               string
 	restConfig         *rest.Config
-	envoyLoggingCaller func(context.Context, common.PortForwarder, string) (map[string]string, error)
+	envoyLoggingCaller func(context.Context, common.PortForwarder, envoy.LoggerParams) (map[string]string, error)
 }
 
 func (l *LogLevelCommand) init() {
@@ -238,8 +238,6 @@ func (l *LogLevelCommand) fetchOrSetLogLevels(adminPorts map[string]int) error {
 			KubeClient: l.kubernetes,
 			RestConfig: l.restConfig,
 		}
-		// if l.level is set (so not an empty string) this will set a log level(s), otherwise
-		// this will just fetch the log levels
 		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, parseParams(l.level))
 		if err != nil {
 			return err
@@ -251,23 +249,28 @@ func (l *LogLevelCommand) fetchOrSetLogLevels(adminPorts map[string]int) error {
 	return nil
 }
 
-func parseParams(params string) string {
+func parseParams(params string) envoy.LoggerParams {
+	loggerParams := envoy.LoggerParams{}
 	if len(params) == 0 {
-		return ""
+		return loggerParams
 	}
 
-	// contains at least one specific logger change
+	// contains global log level change
 	if !strings.Contains(params, ":") {
-		return fmt.Sprintf("?level=%s", params)
+		loggerParams.GlobalLevel = params
+		return loggerParams
 	}
 
-	// contains only 1 specific logger change
+	// contains changes to at least 1 specific log level
 	loggerChanges := strings.Split(params, ",")
-	if len(loggerChanges) == 1 {
-		return fmt.Sprintf("?%s", strings.ReplaceAll(loggerChanges[0], ":", "="))
-	}
 
-	return fmt.Sprintf("?paths=%s", strings.Join(loggerChanges, ","))
+	loggerParams.IndividualLevels = make([]envoy.LogLevel, 0, len(loggerChanges))
+	for _, logger := range loggerChanges {
+		levelValues := strings.Split(logger, ":")
+		level := envoy.LogLevel{Name: levelValues[0], Level: levelValues[1]}
+		loggerParams.IndividualLevels = append(loggerParams.IndividualLevels, level)
+	}
+	return loggerParams
 }
 
 func (l *LogLevelCommand) outputLevels(logLevels map[string]LoggerConfig) {
