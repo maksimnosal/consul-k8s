@@ -1,4 +1,4 @@
-package read
+package envoy
 
 import (
 	"bytes"
@@ -70,45 +70,9 @@ type Secret struct {
 	LastUpdated string
 }
 
-type LogLevel struct {
-	Name  string
-	Level string
-}
-
-type LoggerParams struct {
-	GlobalLevel      string
-	IndividualLevels []LogLevel
-}
-
-func (l LoggerParams) String() string {
-	switch {
-	// Global log level change is set
-	case l.GlobalLevel != "":
-		return fmt.Sprintf("?level=%s", l.GlobalLevel)
-
-		// only one specific logger is changed
-	case len(l.IndividualLevels) == 1:
-		params := "?"
-		params = fmt.Sprintf("%s%s=%s", params, l.IndividualLevels[0].Name, l.IndividualLevels[0].Level)
-		return params
-
-		// multiple specific loggers are changed
-	case len(l.IndividualLevels) > 1:
-		params := "?paths="
-		for _, logger := range l.IndividualLevels {
-			params = fmt.Sprintf("%s%s:%s,", params, logger.Name, logger.Level)
-		}
-		return params
-	default:
-
-		// default path, this is hit if there are no params
-		return ""
-	}
-}
-
 // CallLoggingEndpoint requests the logging endpoint from Envoy Admin Interface for a given port
 // more can be read about that endpoint https://www.envoyproxy.io/docs/envoy/latest/operations/admin#post--logging
-func CallLoggingEndpoint(ctx context.Context, portForward common.PortForwarder, params LoggerParams) (map[string]string, error) {
+func CallLoggingEndpoint(ctx context.Context, portForward common.PortForwarder, params *LoggerParams) (map[string]string, error) {
 	endpoint, err := portForward.Open(ctx)
 	if err != nil {
 		return nil, err

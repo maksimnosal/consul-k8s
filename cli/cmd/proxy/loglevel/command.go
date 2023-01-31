@@ -57,7 +57,7 @@ type LogLevelCommand struct {
 	once               sync.Once
 	help               string
 	restConfig         *rest.Config
-	envoyLoggingCaller func(context.Context, common.PortForwarder, envoy.LoggerParams) (map[string]string, error)
+	envoyLoggingCaller func(context.Context, common.PortForwarder, *envoy.LoggerParams) (map[string]string, error)
 }
 
 func (l *LogLevelCommand) init() {
@@ -238,7 +238,11 @@ func (l *LogLevelCommand) fetchOrSetLogLevels(adminPorts map[string]int) error {
 			KubeClient: l.kubernetes,
 			RestConfig: l.restConfig,
 		}
-		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, parseParams(l.level))
+		params, err := parseParams(l.level)
+		if err != nil {
+			return err
+		}
+		logLevels, err := l.envoyLoggingCaller(l.Ctx, &pf, params)
 		if err != nil {
 			return err
 		}
@@ -249,28 +253,32 @@ func (l *LogLevelCommand) fetchOrSetLogLevels(adminPorts map[string]int) error {
 	return nil
 }
 
-func parseParams(params string) envoy.LoggerParams {
-	loggerParams := envoy.LoggerParams{}
+func parseParams(params string) (*envoy.LoggerParams, error) {
+	loggerParams := envoy.NewLoggerParams()
 	if len(params) == 0 {
-		return loggerParams
+		return loggerParams, nil
 	}
 
 	// contains global log level change
 	if !strings.Contains(params, ":") {
-		loggerParams.GlobalLevel = params
-		return loggerParams
+		err := loggerParams.SetGlobalLoggerLevel(params)
+		if err != nil {
+			return nil, err
+		}
+		return loggerParams, nil
 	}
 
 	// contains changes to at least 1 specific log level
 	loggerChanges := strings.Split(params, ",")
 
-	loggerParams.IndividualLevels = make([]envoy.LogLevel, 0, len(loggerChanges))
 	for _, logger := range loggerChanges {
 		levelValues := strings.Split(logger, ":")
-		level := envoy.LogLevel{Name: levelValues[0], Level: levelValues[1]}
-		loggerParams.IndividualLevels = append(loggerParams.IndividualLevels, level)
+		err := loggerParams.SetLoggerLevel(levelValues[0], levelValues[1])
+		if err != nil {
+			return nil, err
+		}
 	}
-	return loggerParams
+	return loggerParams, nil
 }
 
 func (l *LogLevelCommand) outputLevels(logLevels map[string]LoggerConfig) {

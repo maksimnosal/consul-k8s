@@ -54,7 +54,7 @@ func TestFlagParsingFails(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			c := setupCommand(bytes.NewBuffer([]byte{}))
 			c.kubernetes = fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{fakePod}})
-			c.envoyLoggingCaller = func(context.Context, common.PortForwarder, envoy.LoggerParams) (map[string]string, error) {
+			c.envoyLoggingCaller = func(context.Context, common.PortForwarder, *envoy.LoggerParams) (map[string]string, error) {
 				return testLogConfig, nil
 			}
 
@@ -110,7 +110,7 @@ func TestFlagParsingSucceeds(t *testing.T) {
 
 			c := setupCommand(bytes.NewBuffer([]byte{}))
 			c.kubernetes = fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{fakePod}})
-			c.envoyLoggingCaller = func(context.Context, common.PortForwarder, envoy.LoggerParams) (map[string]string, error) {
+			c.envoyLoggingCaller = func(context.Context, common.PortForwarder, *envoy.LoggerParams) (map[string]string, error) {
 				return testLogConfig, nil
 			}
 
@@ -139,7 +139,7 @@ func TestOutputForGettingLogLevels(t *testing.T) {
 		config[logger] = newLogLevel
 	}
 
-	c.envoyLoggingCaller = func(context.Context, common.PortForwarder, envoy.LoggerParams) (map[string]string, error) {
+	c.envoyLoggingCaller = func(context.Context, common.PortForwarder, *envoy.LoggerParams) (map[string]string, error) {
 		return config, nil
 	}
 	c.kubernetes = fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{fakePod}})
@@ -170,7 +170,7 @@ func TestOutputForSettingLogLevels(t *testing.T) {
 
 	buf := bytes.NewBuffer([]byte{})
 	c := setupCommand(buf)
-	c.envoyLoggingCaller = func(context.Context, common.PortForwarder, envoy.LoggerParams) (map[string]string, error) {
+	c.envoyLoggingCaller = func(context.Context, common.PortForwarder, *envoy.LoggerParams) (map[string]string, error) {
 		return testLogConfig, nil
 	}
 	c.kubernetes = fake.NewSimpleClientset(&v1.PodList{Items: []v1.Pod{fakePod}})

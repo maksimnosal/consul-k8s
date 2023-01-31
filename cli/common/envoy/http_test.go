@@ -29,9 +29,9 @@ func TestCallLoggingEndpoint(t *testing.T) {
 			return strings.Replace(mockServer.URL, "http://", "", 1), nil
 		},
 	}
-	logLevels, err := CallLoggingEndpoint(context.Background(), mpf, "")
+	logLevels, err := CallLoggingEndpoint(context.Background(), mpf, NewLoggerParams())
 	require.NoError(t, err)
-	require.Equal(t, testLogConfig, logLevels)
+	require.Equal(t, testLogConfig(), logLevels)
 }
 
 func TestParseParams(t *testing.T) {
@@ -558,62 +558,10 @@ type mockPortForwarder struct {
 func (m *mockPortForwarder) Open(ctx context.Context) (string, error) { return m.openBehavior(ctx) }
 func (m *mockPortForwarder) Close()                                   {}
 
-var testLogConfig = map[string]string{
-	"admin":                     "debug",
-	"alternate_protocols_cache": "debug",
-	"aws":                       "debug",
-	"assert":                    "debug",
-	"backtrace":                 "debug",
-	"cache_filter":              "debug",
-	"client":                    "debug",
-	"config":                    "debug",
-	"connection":                "debug",
-	"conn_handler":              "debug",
-	"decompression":             "debug",
-	"dns":                       "debug",
-	"dubbo":                     "debug",
-	"envoy_bug":                 "debug",
-	"ext_authz":                 "debug",
-	"ext_proc":                  "debug",
-	"rocketmq":                  "debug",
-	"file":                      "debug",
-	"filter":                    "debug",
-	"forward_proxy":             "debug",
-	"grpc":                      "debug",
-	"happy_eyeballs":            "debug",
-	"hc":                        "debug",
-	"health_checker":            "debug",
-	"http":                      "debug",
-	"http2":                     "debug",
-	"hystrix":                   "debug",
-	"init":                      "debug",
-	"io":                        "debug",
-	"jwt":                       "debug",
-	"kafka":                     "debug",
-	"key_value_store":           "debug",
-	"lua":                       "debug",
-	"main":                      "debug",
-	"matcher":                   "debug",
-	"misc":                      "debug",
-	"mongo":                     "debug",
-	"multi_connection":          "debug",
-	"oauth2":                    "debug",
-	"quic":                      "debug",
-	"quic_stream":               "debug",
-	"pool":                      "debug",
-	"rbac":                      "debug",
-	"rds":                       "debug",
-	"redis":                     "debug",
-	"router":                    "debug",
-	"runtime":                   "debug",
-	"stats":                     "debug",
-	"secret":                    "debug",
-	"tap":                       "debug",
-	"testing":                   "debug",
-	"thrift":                    "debug",
-	"tracing":                   "debug",
-	"upstream":                  "debug",
-	"udp":                       "debug",
-	"wasm":                      "debug",
-	"websocket":                 "debug",
+func testLogConfig() map[string]string {
+	cfg := make(map[string]string, len(envoyLoggers))
+	for k := range envoyLoggers {
+		cfg[k] = "debug"
+	}
+	return cfg
 }
