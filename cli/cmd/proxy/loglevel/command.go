@@ -7,22 +7,24 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/consul-k8s/cli/common"
-	"github.com/hashicorp/consul-k8s/cli/common/envoy"
-	"github.com/hashicorp/consul-k8s/cli/common/flag"
-	"github.com/hashicorp/consul-k8s/cli/common/terminal"
 	"github.com/posener/complete"
 	helmCLI "helm.sh/helm/v3/pkg/cli"
 	"k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/hashicorp/consul-k8s/cli/common"
+	"github.com/hashicorp/consul-k8s/cli/common/envoy"
+	"github.com/hashicorp/consul-k8s/cli/common/flag"
+	"github.com/hashicorp/consul-k8s/cli/common/terminal"
 )
 
 const (
 	defaultAdminPort    = 19000
 	flagNameNamespace   = "namespace"
 	flagNameLevel       = "level"
+	flagNameReset       = "reset"
 	flagNameKubeConfig  = "kubeconfig"
 	flagNameKubeContext = "context"
 )
@@ -51,6 +53,7 @@ type LogLevelCommand struct {
 	podName     string
 	namespace   string
 	level       string
+	reset       bool
 	kubeConfig  string
 	kubeContext string
 
@@ -76,6 +79,13 @@ func (l *LogLevelCommand) init() {
 		Target:  &l.level,
 		Usage:   "The level for the logger. Can be either `-level warning` to change all loggers to warning, or a comma delineated list of loggers with level can be passed like `-level grpc:warning,http:info` to only modify specific loggers.",
 		Aliases: []string{"l"},
+	})
+
+	f.BoolVar(&flag.BoolVar{
+		Name:    flagNameReset,
+		Target:  &l.reset,
+		Usage:   "Reset the log level for all loggers in a pod to the Envoy default (info).",
+		Aliases: []string{"r"},
 	})
 
 	f = l.set.NewSet("Global Options")
@@ -159,6 +169,9 @@ func (l *LogLevelCommand) parseFlags(args []string) error {
 }
 
 func (l *LogLevelCommand) validateFlags() error {
+	if l.level != "" && l.reset == true {
+		return fmt.Errorf("cannot set log level to %q and reset to 'info' at the same time", l.level)
+	}
 	if l.namespace == "" {
 		return nil
 	}
