@@ -169,7 +169,7 @@ func (l *LogLevelCommand) parseFlags(args []string) error {
 }
 
 func (l *LogLevelCommand) validateFlags() error {
-	if l.level != "" && l.reset == true {
+	if l.level != "" && l.reset {
 		return fmt.Errorf("cannot set log level to %q and reset to 'info' at the same time", l.level)
 	}
 	if l.namespace == "" {
