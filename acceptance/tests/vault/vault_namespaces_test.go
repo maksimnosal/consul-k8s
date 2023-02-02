@@ -219,6 +219,9 @@ func TestVault_VaultNamespace(t *testing.T) {
 		"syncCatalog.enabled":  "true",
 		"syncCatalog.toConsul": "false",
 		"syncCatalog.toK8S":    "false",
+
+		// Enable clients to make sure vault integration still works.
+		"client.enabled": "true",
 	}
 
 	if cfg.EnableEnterprise {
