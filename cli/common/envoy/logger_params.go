@@ -94,7 +94,7 @@ func (l *LoggerParams) String() string {
 	}
 }
 
-// trace debug info warning error critical off
+// trace debug info warning error critical off.
 var envoyLevels = map[string]struct{}{
 	"trace":    {},
 	"debug":    {},
