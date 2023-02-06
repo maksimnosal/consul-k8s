@@ -180,7 +180,7 @@ func TestFormatListeners(t *testing.T) {
 		{
 			Name:    "public_listener",
 			Address: "192.168.69.179:20000",
-			FilterChain: []FilterChain{
+			FilterChain: []envoy.FilterChain{
 				{
 					FilterChainMatch: "Any",
 					Filters:          []string{"* -> local_app/"},
@@ -192,7 +192,7 @@ func TestFormatListeners(t *testing.T) {
 		{
 			Name:    "outbound_listener",
 			Address: "127.0.0.1:15001",
-			FilterChain: []FilterChain{
+			FilterChain: []envoy.FilterChain{
 				{
 					FilterChainMatch: "10.100.134.173/32, 240.0.0.3/32",
 					Filters:          []string{"-> client.default.dc1.internal.bc3815c2-1a0f-f3ff-a2e9-20d791f08d00.consul"},
@@ -247,7 +247,7 @@ func TestFormatRoutes(t *testing.T) {
 		"server.*server\\.default\\.dc1\\.internal\\.bc3815c2-1a0f-f3ff-a2e9-20d791f08d00\\.consul/.*2022-05-24T17:41:59\\.078Z",
 	}
 
-	given := []Route{
+	given := []envoy.Route{
 		{
 			Name:               "public_listener",
 			DestinationCluster: "local_app/",
@@ -284,7 +284,7 @@ func TestFormatSecrets(t *testing.T) {
 		"ROOTCA.*Dynamic Warming.*2022-03-15T05:14:22.868Z",
 	}
 
-	given := []Secret{
+	given := []envoy.Secret{
 		{
 			Name:        "default",
 			Type:        "Dynamic Active",

@@ -34,38 +34,6 @@ func TestCallLoggingEndpoint(t *testing.T) {
 	require.Equal(t, testLogConfig(), logLevels)
 }
 
-func TestParseParams(t *testing.T) {
-	t.Parallel()
-	testCases := map[string]struct {
-		params         string
-		expectedOutput string
-	}{
-		"no params": {
-			params:         "",
-			expectedOutput: "",
-		},
-
-		"blanket level": {
-			params:         "warning",
-			expectedOutput: "level=warning",
-		},
-		"single level": {
-			params:         "grpc:warning",
-			expectedOutput: "grpc=warning",
-		},
-		"multiple levels": {
-			params:         "grpc:warning,http:info",
-			expectedOutput: "paths=grpc:warning,http:info",
-		},
-	}
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			out := parseParams(tc.params)
-			require.Equal(t, tc.expectedOutput, out)
-		})
-	}
-}
-
 const (
 	testConfigDump = "test_config_dump.json"
 	testClusters   = "test_clusters.json"

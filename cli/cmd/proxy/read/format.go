@@ -60,7 +60,7 @@ func formatListeners(listeners []envoy.Listener) *terminal.Table {
 	return table
 }
 
-func formatRoutes(routes []Route) *terminal.Table {
+func formatRoutes(routes []envoy.Route) *terminal.Table {
 	table := terminal.NewTable("Name", "Destination Cluster", "Last Updated")
 	for _, route := range routes {
 		table.AddRow([]string{route.Name, route.DestinationCluster, route.LastUpdated}, []string{})
@@ -69,7 +69,7 @@ func formatRoutes(routes []Route) *terminal.Table {
 	return table
 }
 
-func formatSecrets(secrets []Secret) *terminal.Table {
+func formatSecrets(secrets []envoy.Secret) *terminal.Table {
 	table := terminal.NewTable("Name", "Type", "Last Updated")
 	for _, secret := range secrets {
 		table.AddRow([]string{secret.Name, secret.Type, secret.LastUpdated}, []string{})

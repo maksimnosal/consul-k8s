@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,11 +14,13 @@ import (
 	"github.com/hashicorp/consul-k8s/cli/common"
 )
 
+var ErrNoLoggersReturned = errors.New("No loggers were returned from Envoy")
+
 // EnvoyConfig represents the configuration retrieved from a config dump at the
 // admin endpoint. It wraps the Envoy ConfigDump struct to give us convenient
 // access to the different sections of the config.
 type EnvoyConfig struct {
-	rawCfg    []byte
+	RawCfg    []byte
 	Clusters  []Cluster
 	Endpoints []Endpoint
 	Listeners []Listener
@@ -165,7 +168,7 @@ func FetchConfig(ctx context.Context, portForward common.PortForwarder) (*EnvoyC
 // JSON returns the original JSON Envoy config dump data which was used to create
 // the Config object.
 func (c *EnvoyConfig) JSON() []byte {
-	return c.rawCfg
+	return c.RawCfg
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface to unmarshal the raw
@@ -174,7 +177,7 @@ func (c *EnvoyConfig) JSON() []byte {
 func (c *EnvoyConfig) UnmarshalJSON(b []byte) error {
 	// Save the original config dump bytes for marshalling. We should treat this
 	// struct as immutable so this should be safe.
-	c.rawCfg = b
+	c.RawCfg = b
 
 	var root root
 	err := json.Unmarshal(b, &root)
