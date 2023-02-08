@@ -590,7 +590,7 @@ jobs:
       - run-acceptance-tests:
           failfast: true
           #additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -consul-image=docker.mirror.hashicorp.services/hashicorppreview/consul-enterprise:1.15-dev-23aaa4f83845d0e2eced9ea69f731d7eedf840d1
-          additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -consul-image=ghcr.io/analogue/consul-ent-dev:timev1
+          additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -consul-image=analoguetx/consul-ent-dev:timev1
       - store_test_results:
           path: /tmp/test-results
       - store_artifacts:
@@ -624,7 +624,7 @@ jobs:
       - run-acceptance-tests:
           failfast: true
           #additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -enable-transparent-proxy -consul-image=docker.mirror.hashicorp.services/hashicorppreview/consul-enterprise:1.15-dev-23aaa4f83845d0e2eced9ea69f731d7eedf840d1
-          additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -enable-transparent-proxy -consul-image=ghcr.io/analogue/consul-ent-dev:timev1
+          additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -enable-transparent-proxy -consul-image=analoguetx/consul-ent-dev:timev1
       - store_test_results:
           path: /tmp/test-results
       - store_artifacts:
@@ -658,7 +658,7 @@ jobs:
       - run-acceptance-tests:
           failfast: true
           #additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -enable-transparent-proxy -enable-cni -consul-image=docker.mirror.hashicorp.services/hashicorppreview/consul-enterprise:1.15-dev-23aaa4f83845d0e2eced9ea69f731d7eedf840d1
-          additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -enable-transparent-proxy -enable-cni -consul-image=ghcr.io/analogue/consul-ent-dev:timev1
+          additional-flags: -use-kind -kubecontext="kind-dc1" -secondary-kubecontext="kind-dc2" -enable-transparent-proxy -enable-cni -consul-image=analoguetx/consul-ent-dev:timev1
       - store_test_results:
           path: /tmp/test-results
       - store_artifacts:
