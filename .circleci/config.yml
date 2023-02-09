@@ -153,6 +153,7 @@ commands:
                 working_directory: *acceptance-test-path
                 no_output_timeout: 2h
                 command: |
+                  set -xv
                   # Enterprise tests can't run on fork PRs because they require
                   # a secret.
                   if [ -z "$CIRCLE_PR_NUMBER" ]; then
@@ -191,6 +192,7 @@ commands:
                 working_directory: *acceptance-test-path
                 no_output_timeout: 2h
                 command: |
+                  set -xv
                   # Enterprise tests can't run on fork PRs because they require
                   # a secret.
                   if [ -z "$CIRCLE_PR_NUMBER" ]; then
