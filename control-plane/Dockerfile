@@ -18,7 +18,7 @@ RUN CGO_ENABLED=0 go install github.com/hashicorp/go-discover/cmd/discover@49f60
 
 # go-discover builds the discover binary (which we don't currently publish
 # either).
-FROM golang:1.19-windowsservercore-1809 as go-discover-windows
+FROM golang:1.19-windowsservercore-ltsc2022 as go-discover-windows
 RUN go install github.com/hashicorp/go-discover/cmd/discover@49f60c093101c9c5f6b04d5b1c80164251a761a6
 
 # dev copies the binary from a local build
@@ -184,13 +184,12 @@ CMD /bin/${BIN_NAME}
 # We don't rebuild the software because we want the exact checksums and
 # binary signatures to match the software and our builds aren't fully
 # reproducible currently.
-FROM mcr.microsoft.com/windows/servercore:1809
+FROM mcr.microsoft.com/windows/servercore:ltsc2019 as windows
 
 ARG PRODUCT_NAME
 ARG PRODUCT_VERSION
 ARG PRODUCT_REVISION
 ARG BIN_NAME
-ARG CNI_BIN_NAME=consul-cni
 ARG VERSION
 
 # PRODUCT_NAME and PRODUCT_VERSION are the name of the software on releases.hashicorp.com
@@ -217,7 +216,7 @@ ARG TARGETOS
 ARG TARGETARCH
 
 COPY --from=go-discover-windows 'C:\Program Files\Go\bin\discover.exe' 'C:\Program Files\Go\bin\discover.exe'
-COPY dist/${TARGETOS}/${TARGETARCH}/${BIN_NAME} "C:\Program Files\Go\bin\"${BIN_NAME}
+COPY pkg/bin/windows_${TARGETARCH}/${BIN_NAME} "C:\Program Files\Go\bin\"${BIN_NAME}'.exe'
 
 # Set Path
 RUN SETX /M path "%PATH%;C:\Program Files\Go\bin;"
