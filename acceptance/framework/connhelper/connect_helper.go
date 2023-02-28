@@ -51,6 +51,11 @@ type ConnectHelper struct {
 	consulClient *api.Client
 }
 
+func (c *ConnectHelper) ConsulClient(t *testing.T) *api.Client {
+	require.NotNil(t, c.consulClient)
+	return c.consulClient
+}
+
 // Setup creates a new cluster using the New*Cluster function and assigns it
 // to the consulCluster field.
 func (c *ConnectHelper) Setup(t *testing.T) {

@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: non-mesh-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: non-mesh-client
+  template:
+    metadata:
+      name: non-mesh-client
+      labels:
+        app: non-mesh-client
+      annotations:
+        "consul.hashicorp.com/connect-inject": "false"
+    spec:
+      containers:
+        - name: non-mesh-client
+          image: docker.mirror.hashicorp.services/buildpack-deps:jammy-curl
+          command: [ "/bin/sh", "-c", "--" ]
+          args: [ "while true; do sleep 30; done;" ]
+          env:
+          - name: HOST_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+      serviceAccountName: non-mesh-client
+      terminationGracePeriodSeconds: 0 # so deletion is quick
