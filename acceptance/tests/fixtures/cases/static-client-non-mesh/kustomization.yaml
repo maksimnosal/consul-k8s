@@ -1,0 +1,30 @@
+resources:
+  - ../../bases/static-client
+
+nameSuffix: -non-mesh
+
+labels:
+  - pairs:
+      app: static-client-non-mesh
+    includeSelectors: true
+    includeTemplates: true
+
+
+
+patches:
+- target:
+    kind: Deployment
+    name: .*
+  patch: |-
+    - op: replace
+      path: /spec/template/metadata/name
+      value: static-client-non-mesh
+
+#patchesJson6902:
+#- target:
+#    kind: Deployment
+#    name: .*
+#  patch: |-
+#    - op: replace
+#      path: /metadata/name
+#      value: AAAAAAAA

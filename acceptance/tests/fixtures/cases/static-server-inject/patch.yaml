@@ -7,13 +7,14 @@ spec:
     metadata:
       annotations:
         "consul.hashicorp.com/connect-inject": "true"
+        "consul.hashicorp.com/transparent-proxy-exclude-inbound-ports": "8080"
     spec:
       containers:
         - name: static-server
           image: docker.mirror.hashicorp.services/kschoche/http-echo:latest
           args:
             - -text="hello world"
-            - -listen=:8080
+            - -listen=127.0.0.1:8080
           ports:
             - containerPort: 8080
               name: http

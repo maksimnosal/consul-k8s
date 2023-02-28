@@ -51,6 +51,12 @@ type ConnectHelper struct {
 	consulClient *api.Client
 }
 
+// TODO: this is probably frowned upon.
+func (c *ConnectHelper) GimmeClient(t *testing.T) *api.Client {
+	require.NotNil(t, c.consulClient)
+	return c.consulClient
+}
+
 // Setup creates a new cluster using the New*Cluster function and assigns it
 // to the consulCluster field.
 func (c *ConnectHelper) Setup(t *testing.T) {
@@ -77,6 +83,24 @@ func (c *ConnectHelper) Upgrade(t *testing.T) {
 
 	logger.Log(t, "upgrading Consul cluster")
 	c.consulCluster.Upgrade(t, c.helmValues())
+}
+
+func (c *ConnectHelper) DeployNonMeshClient(t *testing.T) {
+	logger.Log(t, "creating static-client-non-mesh deployment")
+
+	k8s.DeployKustomize(t, c.Ctx.KubectlOptions(t), c.Cfg.NoCleanupOnFailure, c.Cfg.DebugDirectory, "../fixtures/cases/static-client-non-mesh")
+
+	// Check that both static-server and static-client have been injected and
+	// now have 2 containers.
+	for _, labelSelector := range []string{"app=static-client-non-mesh"} {
+		podList, err := c.Ctx.KubernetesClient(t).CoreV1().Pods(c.Ctx.KubectlOptions(t).Namespace).List(context.Background(), metav1.ListOptions{
+			LabelSelector: labelSelector,
+		})
+		require.NoError(t, err)
+		require.Len(t, podList.Items, 1)
+		require.Len(t, podList.Items[0].Spec.Containers, 1)
+	}
+
 }
 
 // DeployClientAndServer deploys a client and server pod to the Kubernetes
