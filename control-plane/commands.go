@@ -4,6 +4,7 @@ import (
 	"os"
 
 	cmdACLInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/acl-init"
+	cmdAPIGateway "github.com/hashicorp/consul-k8s/control-plane/subcommand/api-gateway"
 	cmdConnectInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/connect-init"
 	cmdConsulLogout "github.com/hashicorp/consul-k8s/control-plane/subcommand/consul-logout"
 	cmdCreateFederationSecret "github.com/hashicorp/consul-k8s/control-plane/subcommand/create-federation-secret"
@@ -84,8 +85,13 @@ func init() {
 		"gossip-encryption-autogenerate": func() (cli.Command, error) {
 			return &cmdGossipEncryptionAutogenerate.Command{UI: ui}, nil
 		},
+
 		"install-cni": func() (cli.Command, error) {
 			return &cmdInstallCNI.Command{UI: ui}, nil
+		},
+
+		"api-gateway": func() (cli.Command, error) {
+			return &cmdAPIGateway.Command{UI: ui}, nil
 		},
 	}
 }
