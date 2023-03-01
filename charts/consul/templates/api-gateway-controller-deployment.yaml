@@ -130,26 +130,29 @@ spec:
         command:
         - "/bin/sh"
         - "-ec"
-        - |
-          consul-api-gateway server \
-            -sds-server-host {{ template "consul.fullname" . }}-api-gateway-controller.{{ .Release.Namespace }}.svc \
-            -k8s-namespace {{ .Release.Namespace }} \
-            {{- if .Values.global.enableConsulNamespaces }}
-            {{- if .Values.connectInject.consulNamespaces.consulDestinationNamespace }}
-            -consul-destination-namespace={{ .Values.connectInject.consulNamespaces.consulDestinationNamespace }} \
-            {{- end }}
-            {{- if .Values.connectInject.consulNamespaces.mirroringK8S }}
-            -mirroring-k8s=true \
-            {{- if .Values.connectInject.consulNamespaces.mirroringK8SPrefix }}
-            -mirroring-k8s-prefix={{ .Values.connectInject.consulNamespaces.mirroringK8SPrefix }} \
-            {{- end }}
-            {{- end }}
-            {{- end }}
-            {{- if and .Values.global.federation.enabled .Values.global.federation.primaryDatacenter }}
-            -primary-datacenter={{ .Values.global.federation.primaryDatacenter }} \
-            {{- end }}
-            -log-level {{ default .Values.global.logLevel .Values.apiGateway.logLevel }} \
-            -log-json={{ .Values.global.logJSON }}
+        - |-
+          consul-k8s-control-plane api-gateway
+        # NOTE This is the old call to the external API Gateway controller in consul-api-gateway repo.
+        # - |
+        #   consul-api-gateway server \
+        #     -sds-server-host {{ template "consul.fullname" . }}-api-gateway-controller.{{ .Release.Namespace }}.svc \
+        #     -k8s-namespace {{ .Release.Namespace }} \
+        #     {{- if .Values.global.enableConsulNamespaces }}
+        #     {{- if .Values.connectInject.consulNamespaces.consulDestinationNamespace }}
+        #     -consul-destination-namespace={{ .Values.connectInject.consulNamespaces.consulDestinationNamespace }} \
+        #     {{- end }}
+        #     {{- if .Values.connectInject.consulNamespaces.mirroringK8S }}
+        #     -mirroring-k8s=true \
+        #     {{- if .Values.connectInject.consulNamespaces.mirroringK8SPrefix }}
+        #     -mirroring-k8s-prefix={{ .Values.connectInject.consulNamespaces.mirroringK8SPrefix }} \
+        #     {{- end }}
+        #     {{- end }}
+        #     {{- end }}
+        #     {{- if and .Values.global.federation.enabled .Values.global.federation.primaryDatacenter }}
+        #     -primary-datacenter={{ .Values.global.federation.primaryDatacenter }} \
+        #     {{- end }}
+        #     -log-level {{ default .Values.global.logLevel .Values.apiGateway.logLevel }} \
+        #     -log-json={{ .Values.global.logJSON }}
         volumeMounts:
         {{- if .Values.global.acls.manageSystemACLs }}
         - name: consul-bin
