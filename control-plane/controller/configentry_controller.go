@@ -37,11 +37,11 @@ type Controller interface {
 	// Update updates the state of the whole object.
 	Update(context.Context, client.Object, ...client.UpdateOption) error
 	// UpdateStatus updates the state of just the object's status.
-	UpdateStatus(context.Context, client.Object, ...client.UpdateOption) error
+	UpdateStatus(context.Context, client.Object, ...client.SubResourceUpdateOption) error
 	// Get retrieves an obj for the given object key from the Kubernetes Cluster.
 	// obj must be a struct pointer so that obj can be updated with the response
 	// returned by the Server.
-	Get(ctx context.Context, key client.ObjectKey, obj client.Object) error
+	Get(ctx context.Context, key client.ObjectKey, obj client.Object, options ...client.GetOption) error
 	// Logger returns a logger with values added for the specific controller
 	// and request name.
 	Logger(types.NamespacedName) logr.Logger
@@ -267,10 +267,8 @@ func (r *ConfigEntryController) ReconcileEntry(ctx context.Context, crdCtrl Cont
 	return ctrl.Result{}, nil
 }
 
-// setupWithManager sets up the controller manager for the given resource
-// with our default options.
-func setupWithManager(mgr ctrl.Manager, resource client.Object, reconciler reconcile.Reconciler) error {
-	options := controller.Options{
+func defaultControllerOptions() controller.Options {
+	return controller.Options{
 		// Taken from https://github.com/kubernetes/client-go/blob/master/util/workqueue/default_rate_limiters.go#L39
 		// and modified from a starting backoff of 5ms and max of 1000s to a
 		// starting backoff of 200ms and a max of 5s to better fit our most
@@ -291,10 +289,14 @@ func setupWithManager(mgr ctrl.Manager, resource client.Object, reconciler recon
 			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 		),
 	}
+}
 
+// setupWithManager sets up the controller manager for the given resource
+// with our default options.
+func setupWithManager(mgr ctrl.Manager, resource client.Object, reconciler reconcile.Reconciler) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(resource).
-		WithOptions(options).
+		WithOptions(defaultControllerOptions()).
 		Complete(reconciler)
 }
 

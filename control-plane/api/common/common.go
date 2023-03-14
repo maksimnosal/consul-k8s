@@ -11,6 +11,7 @@ const (
 	ExportedServices   string = "exportedservices"
 	IngressGateway     string = "ingressgateway"
 	TerminatingGateway string = "terminatinggateway"
+	APIGateway         string = "apigateway"
 
 	Global                 string = "global"
 	Mesh                   string = "mesh"

@@ -712,10 +712,28 @@ func (c *Command) Run(args []string) int {
 		}
 	}
 
-	if err = mgr.Start(ctx); err != nil {
+	cache, err := controller.SetupGatewayControllerWithManager(ctx, mgr, controller.GatewayControllerConfig{
+		ConsulClientConfig:  consulConfig,
+		ConsulServerConnMgr: watcher,
+		Partition:           c.consul.Partition,
+		NamespacesEnabled:   c.flagEnableNamespaces,
+		Logger:              ctrl.Log.WithName("controller").WithName(apicommon.APIGateway),
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", apicommon.APIGateway)
+		return 1
+	}
+	go cache.Run(ctx)
+
+	// wait for cache fill
+	cache.WaitSynced(ctx)
+
+	// now run the manager
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		return 1
 	}
+
 	c.UI.Info("shutting down")
 	return 0
 }
