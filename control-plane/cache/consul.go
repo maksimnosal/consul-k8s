@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -11,6 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
+
+var ErrStaleEntry = errors.New("entry is stale")
 
 const namespaceWildcard = "*"
 
@@ -162,6 +165,34 @@ func (c *Cache) Subscribe(ctx context.Context, kind string, transformer Transfor
 	c.subscribers[kind] = subscribers
 
 	return subscription
+}
+
+func (c *Cache) Write(entry api.ConfigEntry) error {
+	c.cacheMutex.Lock()
+	defer c.cacheMutex.Unlock()
+
+	client, err := consul.NewClientFromConnMgr(c.config, c.serverMgr)
+	if err != nil {
+		return err
+	}
+
+	options := &api.WriteOptions{}
+	if c.useNamespaces {
+		options.Namespace = namespaceWildcard
+	}
+	if c.partition != "" {
+		options.Partition = c.partition
+	}
+
+	updated, _, err := client.ConfigEntries().CAS(entry, entry.GetModifyIndex(), options)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		return ErrStaleEntry
+	}
+
+	return nil
 }
 
 func (c *Cache) Get(reference api.ResourceReference) api.ConfigEntry {

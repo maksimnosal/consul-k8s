@@ -85,6 +85,7 @@ func (c *GatewayController) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// TODO: validate the class config
 	// TODO: validate a gateway finalizer
 	// TODO: reconcile resources
+	// TODO: sync any modified entries to Consul via cache.Write(entry)
 
 	return ctrl.Result{}, nil
 }
