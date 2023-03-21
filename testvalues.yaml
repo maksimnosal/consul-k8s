@@ -1,0 +1,17 @@
+globals:
+  imageK8S: tecke/consul-k8s-control-plane-dev
+  logLevel: "debug"
+apiGateway:
+  enabled: true
+  logLevel: "debug"
+server:
+  replicas: 1
+connectInject:
+  enabled: true
+ui:
+  enabled: true
+  service:
+    enabled: true
+controller:
+  enabled: true
+
