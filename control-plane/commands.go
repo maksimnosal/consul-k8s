@@ -14,6 +14,7 @@ import (
 	cmdInjectConnect "github.com/hashicorp/consul-k8s/control-plane/subcommand/inject-connect"
 	cmdInstallCNI "github.com/hashicorp/consul-k8s/control-plane/subcommand/install-cni"
 	cmdPartitionInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/partition-init"
+	cmdServeAPIGateway "github.com/hashicorp/consul-k8s/control-plane/subcommand/serve-api-gateway"
 	cmdServerACLInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/server-acl-init"
 	cmdSyncCatalog "github.com/hashicorp/consul-k8s/control-plane/subcommand/sync-catalog"
 	cmdTLSInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/tls-init"
