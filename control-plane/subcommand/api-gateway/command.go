@@ -1,11 +1,10 @@
-package serveapigateway
+package apigateway
 
 import (
 	"flag"
 	"sync"
 	"time"
 
-	apigateway "github.com/hashicorp/consul-k8s/control-plane/api-gateway"
 	"github.com/mitchellh/cli"
 )
 

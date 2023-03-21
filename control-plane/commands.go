@@ -4,6 +4,7 @@ import (
 	"os"
 
 	cmdACLInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/acl-init"
+	cmdAPIGateway "github.com/hashicorp/consul-k8s/control-plane/subcommand/api-gateway"
 	cmdConnectInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/connect-init"
 	cmdConsulLogout "github.com/hashicorp/consul-k8s/control-plane/subcommand/consul-logout"
 	cmdCreateFederationSecret "github.com/hashicorp/consul-k8s/control-plane/subcommand/create-federation-secret"
@@ -13,7 +14,6 @@ import (
 	cmdInjectConnect "github.com/hashicorp/consul-k8s/control-plane/subcommand/inject-connect"
 	cmdInstallCNI "github.com/hashicorp/consul-k8s/control-plane/subcommand/install-cni"
 	cmdPartitionInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/partition-init"
-	cmdServeAPIGateway "github.com/hashicorp/consul-k8s/control-plane/subcommand/serve-api-gateway"
 	cmdServerACLInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/server-acl-init"
 	cmdSyncCatalog "github.com/hashicorp/consul-k8s/control-plane/subcommand/sync-catalog"
 	cmdTLSInit "github.com/hashicorp/consul-k8s/control-plane/subcommand/tls-init"
@@ -90,8 +90,8 @@ func init() {
 			return &cmdInstallCNI.Command{UI: ui}, nil
 		},
 
-		"serve-api-gateway": func() (cli.Command, error) {
-			return &cmdServeAPIGateway.Command{UI: ui}, nil
+		"api-gateway": func() (cli.Command, error) {
+			return &cmdAPIGateway.Command{UI: ui}, nil
 		},
 	}
 }
