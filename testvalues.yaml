@@ -1,4 +1,4 @@
-globals:
+global:
   imageK8S: tecke/consul-k8s-control-plane-dev
   logLevel: "debug"
 apiGateway:
