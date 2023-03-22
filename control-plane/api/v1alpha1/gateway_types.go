@@ -19,6 +19,10 @@ const (
 	MeshServiceKind        = "MeshService"
 )
 
+func init() {
+	SchemeBuilder.Register(&ExportedServices{}, &ExportedServicesList{})
+}
+
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
