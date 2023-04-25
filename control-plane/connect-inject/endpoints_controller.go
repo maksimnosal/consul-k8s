@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	mapset "github.com/deckarep/golang-set"
 	"github.com/go-logr/logr"
@@ -696,7 +700,7 @@ func (r *EndpointsController) deregisterServiceOnAllAgents(ctx context.Context, 
 	}
 
 	// On each agent, we need to get services matching "k8s-service-name" and "k8s-namespace" metadata.
-	for _, agent := range agents.Items {
+	callAgent := func(agent corev1.Pod) error {
 		client, err := r.remoteConsulClient(agent.Status.PodIP, r.consulNamespace(k8sSvcNamespace))
 		if err != nil {
 			r.Log.Error(err, "failed to create a new Consul client", "address", agent.Status.PodIP)
@@ -743,6 +747,50 @@ func (r *EndpointsController) deregisterServiceOnAllAgents(ctx context.Context, 
 				}
 			}
 		}
+		return nil
+	}
+
+	// Control the number of concurrent calls that can be made to agents
+	var concurrentCalls int = 30
+	if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
+		if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
+			concurrentCalls = i
+		}
+	}
+	if concurrentCalls > len(agents.Items) {
+		concurrentCalls = len(agents.Items)
+	}
+
+	// Wait for all items to complete before returning to preserve the original flow of data.
+	r.Log.Info("Queuing up deregisterServiceOnAllAgents", "tasks", len(agents.Items), "goroutines", concurrentCalls)
+	var waiter sync.WaitGroup
+	waiter.Add(concurrentCalls)
+
+	// Queue all of the agent calls
+	var hadError atomic.Bool
+	agentChan := make(chan corev1.Pod)
+	for i := 0; i < concurrentCalls; i++ {
+		go func() {
+			defer waiter.Done()
+			for agent := range agentChan {
+				if err := callAgent(agent); err != nil {
+					r.Log.Error(err, "error while contacting agent", "agentIP", agent.Status.PodIP)
+					hadError.Store(true)
+				}
+			}
+		}()
+	}
+
+	for _, agent := range agents.Items {
+		agentChan <- agent
+	}
+	close(agentChan)
+
+	// Wait for all responses
+	waiter.Wait()
+	r.Log.Info("Done with all tasks for deregisterServiceOnAllAgents", "tasks", len(agents.Items))
+	if hadError.Load() {
+		return fmt.Errorf("some deregisterServiceOnAllAgents tasks were not successful")
 	}
 	return nil
 }
