@@ -238,7 +238,7 @@ rebase the branch on master, fixing any conflicts along the way before the code 
 1. Replace the names
 1. Ensure you've correctly replaced the names in the kubebuilder annotation, ensure the plurality is correct
     ```go
-    // +kubebuilder:webhook:verbs=create;update,path=/mutate-v1alpha1-ingressgateway,mutating=true,failurePolicy=fail,groups=consul.hashicorp.com,resources=ingressgateways,versions=v1alpha1,name=mutate-ingressgateway.consul.hashicorp.com,webhookVersions=v1beta1,sideEffects=None
+    // +kubebuilder:webhook:verbs=create;update,path=/mutate-v1alpha1-ingressgateway,mutating=true,failurePolicy=fail,groups=consul.hashicorp.com,resources=ingressgateways,versions=v1alpha1,name=mutate-ingressgateway.consul.hashicorp.com,sideEffects=None,admissionReviewVersions=v1beta1;v1
     ```
 
 ### Update command.go
