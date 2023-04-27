@@ -12,7 +12,7 @@ import (
 	"github.com/hashicorp/consul/sdk/testutil/retry"
 	"github.com/mitchellh/cli"
 	"github.com/stretchr/testify/require"
-	admissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -32,33 +32,33 @@ func testSignalHandling(sig os.Signal) func(*testing.T) {
 		caBundleOne := []byte("bootstrapped-CA-one")
 		caBundleTwo := []byte("bootstrapped-CA-two")
 
-		webhookOne := &admissionv1beta1.MutatingWebhookConfiguration{
+		webhookOne := &admissionv1.MutatingWebhookConfiguration{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: webhookConfigOneName,
 			},
-			Webhooks: []admissionv1beta1.MutatingWebhook{
+			Webhooks: []admissionv1.MutatingWebhook{
 				{
 					Name: "webhook-under-test",
-					ClientConfig: admissionv1beta1.WebhookClientConfig{
+					ClientConfig: admissionv1.WebhookClientConfig{
 						CABundle: caBundleOne,
 					},
 				},
 			},
 		}
-		webhookTwo := &admissionv1beta1.MutatingWebhookConfiguration{
+		webhookTwo := &admissionv1.MutatingWebhookConfiguration{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: webhookConfigTwoName,
 			},
-			Webhooks: []admissionv1beta1.MutatingWebhook{
+			Webhooks: []admissionv1.MutatingWebhook{
 				{
 					Name: "webhookOne-under-test",
-					ClientConfig: admissionv1beta1.WebhookClientConfig{
+					ClientConfig: admissionv1.WebhookClientConfig{
 						CABundle: caBundleTwo,
 					},
 				},
 				{
 					Name: "webhookTwo-under-test",
-					ClientConfig: admissionv1beta1.WebhookClientConfig{
+					ClientConfig: admissionv1.WebhookClientConfig{
 						CABundle: caBundleTwo,
 					},
 				},
@@ -133,33 +133,33 @@ func TestRun_SecretDoesNotExist(t *testing.T) {
 	caBundleOne := []byte("bootstrapped-CA-one")
 	caBundleTwo := []byte("bootstrapped-CA-two")
 
-	webhookOne := &admissionv1beta1.MutatingWebhookConfiguration{
+	webhookOne := &admissionv1.MutatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: webhookConfigOneName,
 		},
-		Webhooks: []admissionv1beta1.MutatingWebhook{
+		Webhooks: []admissionv1.MutatingWebhook{
 			{
 				Name: "webhook-under-test",
-				ClientConfig: admissionv1beta1.WebhookClientConfig{
+				ClientConfig: admissionv1.WebhookClientConfig{
 					CABundle: caBundleOne,
 				},
 			},
 		},
 	}
-	webhookTwo := &admissionv1beta1.MutatingWebhookConfiguration{
+	webhookTwo := &admissionv1.MutatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: webhookConfigTwoName,
 		},
-		Webhooks: []admissionv1beta1.MutatingWebhook{
+		Webhooks: []admissionv1.MutatingWebhook{
 			{
 				Name: "webhookOne-under-test",
-				ClientConfig: admissionv1beta1.WebhookClientConfig{
+				ClientConfig: admissionv1.WebhookClientConfig{
 					CABundle: caBundleTwo,
 				},
 			},
 			{
 				Name: "webhookTwo-under-test",
-				ClientConfig: admissionv1beta1.WebhookClientConfig{
+				ClientConfig: admissionv1.WebhookClientConfig{
 					CABundle: caBundleTwo,
 				},
 			},
@@ -241,33 +241,33 @@ func TestRun_SecretExists(t *testing.T) {
 		Type: v1.SecretTypeTLS,
 	}
 
-	webhookOne := &admissionv1beta1.MutatingWebhookConfiguration{
+	webhookOne := &admissionv1.MutatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: webhookConfigOneName,
 		},
-		Webhooks: []admissionv1beta1.MutatingWebhook{
+		Webhooks: []admissionv1.MutatingWebhook{
 			{
 				Name: "webhook-under-test",
-				ClientConfig: admissionv1beta1.WebhookClientConfig{
+				ClientConfig: admissionv1.WebhookClientConfig{
 					CABundle: caBundleOne,
 				},
 			},
 		},
 	}
-	webhookTwo := &admissionv1beta1.MutatingWebhookConfiguration{
+	webhookTwo := &admissionv1.MutatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: webhookConfigTwoName,
 		},
-		Webhooks: []admissionv1beta1.MutatingWebhook{
+		Webhooks: []admissionv1.MutatingWebhook{
 			{
 				Name: "webhookOne-under-test",
-				ClientConfig: admissionv1beta1.WebhookClientConfig{
+				ClientConfig: admissionv1.WebhookClientConfig{
 					CABundle: caBundleTwo,
 				},
 			},
 			{
 				Name: "webhookTwo-under-test",
-				ClientConfig: admissionv1beta1.WebhookClientConfig{
+				ClientConfig: admissionv1.WebhookClientConfig{
 					CABundle: caBundleTwo,
 				},
 			},
@@ -338,14 +338,14 @@ func TestRun_SecretUpdates(t *testing.T) {
 		Type: v1.SecretTypeTLS,
 	}
 
-	webhookOne := &admissionv1beta1.MutatingWebhookConfiguration{
+	webhookOne := &admissionv1.MutatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: webhookConfigOne,
 		},
-		Webhooks: []admissionv1beta1.MutatingWebhook{
+		Webhooks: []admissionv1.MutatingWebhook{
 			{
 				Name: "webhook-under-test",
-				ClientConfig: admissionv1beta1.WebhookClientConfig{
+				ClientConfig: admissionv1.WebhookClientConfig{
 					CABundle: caBundleOne,
 				},
 			},
@@ -414,14 +414,14 @@ func TestCertWatcher(t *testing.T) {
 	t.Parallel()
 
 	webhookName := "webhookOne"
-	webhook := &admissionv1beta1.MutatingWebhookConfiguration{
+	webhook := &admissionv1.MutatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: webhookName,
 		},
-		Webhooks: []admissionv1beta1.MutatingWebhook{
+		Webhooks: []admissionv1.MutatingWebhook{
 			{
 				Name:         "webhook-under-test",
-				ClientConfig: admissionv1beta1.WebhookClientConfig{},
+				ClientConfig: admissionv1.WebhookClientConfig{},
 			},
 		},
 	}
@@ -459,7 +459,7 @@ func TestCertWatcher(t *testing.T) {
 	})
 	// Update the CA bundle on the MWC to `""` to replicate a helm upgrade
 	webhook.Webhooks[0].ClientConfig.CABundle = []byte("")
-	_, err = k8s.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Update(ctx, webhook, metav1.UpdateOptions{})
+	_, err = k8s.AdmissionregistrationV1().MutatingWebhookConfigurations().Update(ctx, webhook, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
 	// If this test passes, it implies that the system has recovered from the MWC
@@ -475,7 +475,7 @@ func TestCertWatcher(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	t.Parallel()
-	webhook := &admissionv1beta1.MutatingWebhookConfiguration{
+	webhook := &admissionv1.MutatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "webhook-config-name",
 		},
