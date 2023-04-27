@@ -197,11 +197,11 @@ func TestRun_SecretDoesNotExist(t *testing.T) {
 		require.NoError(r, err)
 		require.Equal(r, secretTwo.Type, v1.SecretTypeTLS)
 
-		webhookConfigOne, err := k8s.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Get(ctx, webhookConfigOneName, metav1.GetOptions{})
+		webhookConfigOne, err := k8s.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, webhookConfigOneName, metav1.GetOptions{})
 		require.NoError(r, err)
 		require.NotEqual(r, webhookConfigOne.Webhooks[0].ClientConfig.CABundle, caBundleOne)
 
-		webhookConfigTwo, err := k8s.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Get(ctx, webhookConfigTwoName, metav1.GetOptions{})
+		webhookConfigTwo, err := k8s.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, webhookConfigTwoName, metav1.GetOptions{})
 		require.NoError(r, err)
 		require.NotEqual(r, webhookConfigTwo.Webhooks[0].ClientConfig.CABundle, caBundleTwo)
 		require.NotEqual(r, webhookConfigTwo.Webhooks[1].ClientConfig.CABundle, caBundleTwo)
@@ -307,11 +307,11 @@ func TestRun_SecretExists(t *testing.T) {
 		require.NotEqual(r, secretTwo.Data[v1.TLSCertKey], []byte("cert-2"))
 		require.NotEqual(r, secretTwo.Data[v1.TLSPrivateKeyKey], []byte("private-key-2"))
 
-		webhookConfigOne, err := k8s.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Get(ctx, webhookConfigOneName, metav1.GetOptions{})
+		webhookConfigOne, err := k8s.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, webhookConfigOneName, metav1.GetOptions{})
 		require.NoError(r, err)
 		require.NotEqual(r, webhookConfigOne.Webhooks[0].ClientConfig.CABundle, caBundleOne)
 
-		webhookConfigTwo, err := k8s.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Get(ctx, webhookConfigTwoName, metav1.GetOptions{})
+		webhookConfigTwo, err := k8s.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, webhookConfigTwoName, metav1.GetOptions{})
 		require.NoError(r, err)
 		require.NotEqual(r, webhookConfigTwo.Webhooks[0].ClientConfig.CABundle, caBundleTwo)
 		require.NotEqual(r, webhookConfigTwo.Webhooks[1].ClientConfig.CABundle, caBundleTwo)
@@ -389,7 +389,7 @@ func TestRun_SecretUpdates(t *testing.T) {
 		certificate = secret1.Data[v1.TLSCertKey]
 		key = secret1.Data[v1.TLSPrivateKeyKey]
 
-		webhookConfig1, err := k8s.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Get(ctx, webhookConfigOne, metav1.GetOptions{})
+		webhookConfig1, err := k8s.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, webhookConfigOne, metav1.GetOptions{})
 		require.NoError(r, err)
 		require.NotEqual(r, webhookConfig1.Webhooks[0].ClientConfig.CABundle, caBundleOne)
 	})
@@ -452,7 +452,7 @@ func TestCertWatcher(t *testing.T) {
 	ctx := context.Background()
 	timer := &retry.Timer{Timeout: 5 * time.Second, Wait: 500 * time.Millisecond}
 	retry.RunWith(timer, t, func(r *retry.R) {
-		webhookConfig, err := k8s.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Get(ctx, webhookName, metav1.GetOptions{})
+		webhookConfig, err := k8s.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, webhookName, metav1.GetOptions{})
 		require.NoError(r, err)
 		// Verify that the CA cert has been initally set on the MWC.
 		require.Contains(r, string(webhookConfig.Webhooks[0].ClientConfig.CABundle), "ca-certificate-string")
@@ -466,7 +466,7 @@ func TestCertWatcher(t *testing.T) {
 	// getting updated to have the correct CA within a reasonable time window
 	timer = &retry.Timer{Timeout: 5 * time.Second, Wait: 500 * time.Millisecond}
 	retry.RunWith(timer, t, func(r *retry.R) {
-		webhookConfig, err := k8s.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Get(ctx, webhookName, metav1.GetOptions{})
+		webhookConfig, err := k8s.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, webhookName, metav1.GetOptions{})
 		require.NoError(r, err)
 		// Verify that the CA cert has been updated with the correct CA.
 		require.Contains(r, string(webhookConfig.Webhooks[0].ClientConfig.CABundle), "ca-certificate-string")
