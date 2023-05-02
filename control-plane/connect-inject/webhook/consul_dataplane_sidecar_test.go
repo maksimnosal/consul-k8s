@@ -1202,3 +1202,133 @@ func TestHandlerConsulDataplaneSidecar_Metrics(t *testing.T) {
 		})
 	}
 }
+
+func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
+	gracefulShutdownSeconds := resource.MustParse(10)
+	gracefulPort := resource.MustParse(20301)
+	gracefulShutdownPath := resource.MustParse("/shutdown")
+
+	cases := map[string]struct {
+		webhook     MeshWebhook
+		annotations map[string]string
+		expCmdArgs  string
+		expErr      string
+	}{
+		"no defaults, no annotations": {
+			webhook:     MeshWebhook{},
+			annotations: nil,
+			expCmdArgs:  "",
+		},
+		"all defaults, no annotations": {
+			webhook: MeshWebhook{
+				DefaultProxyCPURequest:    cpu1,
+				DefaultProxyCPULimit:      cpu2,
+				DefaultProxyMemoryRequest: mem1,
+				DefaultProxyMemoryLimit:   mem2,
+			},
+			annotations: nil,
+			expCmdArgs:  "",
+		},
+		"no defaults, all annotations": {
+			webhook: MeshWebhook{},
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyCPURequest:    "100m",
+				constants.AnnotationSidecarProxyMemoryRequest: "100Mi",
+				constants.AnnotationSidecarProxyCPULimit:      "200m",
+				constants.AnnotationSidecarProxyMemoryLimit:   "200Mi",
+			},
+			expCmdArgs: "",
+		},
+		"annotations override defaults": {
+			webhook: MeshWebhook{
+				DefaultProxyCPURequest:    zero,
+				DefaultProxyCPULimit:      zero,
+				DefaultProxyMemoryRequest: zero,
+				DefaultProxyMemoryLimit:   zero,
+			},
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyCPURequest:    "100m",
+				constants.AnnotationSidecarProxyMemoryRequest: "100Mi",
+				constants.AnnotationSidecarProxyCPULimit:      "200m",
+				constants.AnnotationSidecarProxyMemoryLimit:   "200Mi",
+			},
+			expCmdArgs: "",
+		},
+		"defaults set to zero, no annotations": {
+			webhook: MeshWebhook{
+				DefaultProxyCPURequest:    zero,
+				DefaultProxyCPULimit:      zero,
+				DefaultProxyMemoryRequest: zero,
+				DefaultProxyMemoryLimit:   zero,
+			},
+			annotations: nil,
+			expCmdArgs:  "",
+		},
+		"annotations set to 0": {
+			webhook: MeshWebhook{},
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyCPURequest:    "0",
+				constants.AnnotationSidecarProxyMemoryRequest: "0",
+				constants.AnnotationSidecarProxyCPULimit:      "0",
+				constants.AnnotationSidecarProxyMemoryLimit:   "0",
+			},
+			expCmdArgs: "",
+		},
+		"invalid cpu request": {
+			webhook: MeshWebhook{},
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyCPURequest: "invalid",
+			},
+			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-cpu-request:\"invalid\": quantities must match the regular expression",
+		},
+		"invalid cpu limit": {
+			webhook: MeshWebhook{},
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyCPULimit: "invalid",
+			},
+			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-cpu-limit:\"invalid\": quantities must match the regular expression",
+		},
+		"invalid memory request": {
+			webhook: MeshWebhook{},
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyMemoryRequest: "invalid",
+			},
+			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-memory-request:\"invalid\": quantities must match the regular expression",
+		},
+		"invalid memory limit": {
+			webhook: MeshWebhook{},
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyMemoryLimit: "invalid",
+			},
+			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-memory-limit:\"invalid\": quantities must match the regular expression",
+		},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(tt *testing.T) {
+			c.webhook.ConsulConfig = &consul.Config{HTTPPort: 8500, GRPCPort: 8502}
+			require := require.New(tt)
+			pod := corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: c.annotations,
+				},
+
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "web",
+						},
+					},
+				},
+			}
+			container, err := c.webhook.consulDataplaneSidecar(testNS, pod, multiPortInfo{})
+			if c.expErr != "" {
+				require.NotNil(err)
+				require.Contains(err.Error(), c.expErr)
+			} else {
+				require.NoError(err)
+				require.Contains(t, strings.Join(container.Args, " "), c.expCmdArgs)
+			}
+		})
+	}
+}

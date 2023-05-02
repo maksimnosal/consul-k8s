@@ -431,6 +431,15 @@ type InitContainer struct {
 	Resources Resources `yaml:"resources"`
 }
 
+type Lifecycle struct {
+	DefaultEnabled                string `yaml:"defaultEnabled"`
+	DrainListenersEnabled         bool   `yaml:"drainListenersEnabled"`
+	ShutdownGracePeriodSeconds    int    `yaml:"shutdownGracePeriodSeconds"`
+	TerminationGracePeriodSeconds int    `yaml:"terminationGracePeriodSeconds"`
+	DefaultGracefulPort           int    `yaml:"defaultGracefulPort"`
+	DefaultGracefulShutdownPath   string `yaml:"defaultGracefulShutdownPath"`
+}
+
 type ConnectInject struct {
 	Enabled                bool             `yaml:"enabled"`
 	Replicas               int              `yaml:"replicas"`

@@ -1318,6 +1318,14 @@ connectInject:
         memory: "150Mi"
         cpu: "50m"
 
+  # Setting for sidecar proxy lifecycle configuration.
+  lifecycle:
+    defaultEnabled: true
+    drainListenersEnabled: true
+    shutdownGracePeriodSeconds: 30
+    defaultGracefulPort: 20300
+    defaultGracefulShutdownPath: "/graceful-shutdown"
+
 # Controller handles config entry custom resources.
 # Requires consul >= 1.8.4.
 # ServiceIntentions require consul 1.9+.

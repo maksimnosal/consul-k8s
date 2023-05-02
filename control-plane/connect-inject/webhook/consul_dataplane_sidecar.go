@@ -247,6 +247,18 @@ func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi mu
 		args = append(args, fmt.Sprintf("-envoy-admin-bind-port=%d", 19000+mpi.serviceIndex))
 	}
 
+	if w.ConnectInject.Lifecycle.DefaultEnabled {
+		if w.ShutdownDrainListeners {
+			args = append(args, "-proxy-drain-listeners-enabled="+w.ShutdownDrainListeners)
+		}
+		if w.ShutdownGracePeriod != "" {
+			// TODO: source default value from constant
+			args = append(args, "-proxy-shutdown-grace-period=30s")
+		}
+	} else {
+		args = append(args, "-proxy-lifecycle-enabled=false")
+	}
+
 	// Set a default scrape path that can be overwritten by the annotation.
 	prometheusScrapePath := w.MetricsConfig.PrometheusScrapePath(pod)
 	args = append(args, "-telemetry-prom-scrape-path="+prometheusScrapePath)
