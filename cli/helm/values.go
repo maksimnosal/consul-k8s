@@ -457,6 +457,7 @@ type ConnectInject struct {
 	ACLInjectToken         ACLInjectToken   `yaml:"aclInjectToken"`
 	SidecarProxy           SidecarProxy     `yaml:"sidecarProxy"`
 	InitContainer          InitContainer    `yaml:"initContainer"`
+	Lifecycle              Lifecycle        `yaml:"lifecycle"`
 }
 
 type ACLToken struct {
