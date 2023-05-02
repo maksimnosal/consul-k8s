@@ -306,6 +306,7 @@ func (w *MeshWebhook) Handle(ctx context.Context, req admission.Request) admissi
 			w.Log.Error(err, "error configuring injection sidecar container", "request name", req.Name)
 			return admission.Errored(http.StatusInternalServerError, fmt.Errorf("error configuring injection sidecar container: %s", err))
 		}
+		// TODO: invert to start the Envoy sidecar before the application container
 		pod.Spec.Containers = append(pod.Spec.Containers, envoySidecar)
 	} else {
 		// For multi port pods, check for unsupported cases, mount all relevant service account tokens, and mount an init
@@ -376,6 +377,8 @@ func (w *MeshWebhook) Handle(ctx context.Context, req admission.Request) admissi
 				w.Log.Error(err, "error configuring injection sidecar container", "request name", req.Name)
 				return admission.Errored(http.StatusInternalServerError, fmt.Errorf("error configuring injection sidecar container: %s", err))
 			}
+			// TODO: invert to start the Envoy sidecar container before the
+			// application container
 			pod.Spec.Containers = append(pod.Spec.Containers, envoySidecar)
 		}
 	}
