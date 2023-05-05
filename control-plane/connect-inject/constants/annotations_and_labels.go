@@ -100,6 +100,12 @@ const (
 	AnnotationSidecarProxyMemoryLimit   = "consul.hashicorp.com/sidecar-proxy-memory-limit"
 	AnnotationSidecarProxyMemoryRequest = "consul.hashicorp.com/sidecar-proxy-memory-request"
 
+	// annotations for sidecar proxy lifecycle configuration.
+	AnnotationSidecarProxyLifecycleEnabled       = "consul.hashicorp.com/sidecar-proxy-lifecycle"
+	AnnotationSidecarProxyShutdownDrainListeners = "consul.hashicorp.com/sidecar-proxy-shutdown-drain-listeners"
+	AnnotationSidecarProxyShutdownGracePeriod    = "consul.hashicorp.com/sidecar-proxy-shutdown-grace-period"
+	AnnotationSidecarProxyTerminationGracePeriod = "consul.hashicorp.com/sidecar-proxy-termination-grace-period"
+
 	// annotations for sidecar volumes.
 	AnnotationConsulSidecarUserVolume      = "consul.hashicorp.com/consul-sidecar-user-volume"
 	AnnotationConsulSidecarUserVolumeMount = "consul.hashicorp.com/consul-sidecar-user-volume-mount"
