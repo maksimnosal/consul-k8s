@@ -1204,9 +1204,9 @@ func TestHandlerConsulDataplaneSidecar_Metrics(t *testing.T) {
 }
 
 func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
-	gracefulShutdownSeconds := resource.MustParse("10s")
-	gracefulPort := resource.MustParse("20301")
-	gracefulShutdownPath := resource.MustParse("/shutdown")
+	gracefulShutdownSeconds := 30
+	// gracefulPort := resource.MustParse("20301")
+	// gracefulShutdownPath := resource.MustParse("/shutdown")
 
 	cases := map[string]struct {
 		webhook     MeshWebhook
@@ -1223,7 +1223,7 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 			webhook: MeshWebhook{
 				DefaultProxyLifecycleEnabled:       true,
 				DefaultProxyShutdownDrainListeners: true,
-				DefaultProxyShutdownGracePeriod:    30,
+				DefaultProxyShutdownGracePeriod:    gracefulShutdownSeconds,
 				DefaultProxyTerminationGracePeriod: 30,
 			},
 			annotations: nil,
@@ -1232,8 +1232,8 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 		"no defaults, all annotations": {
 			webhook: MeshWebhook{},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyLifecycleEnabled:       "true",
-				constants.AnnotationSidecarProxyDrainListeners:         "true",
+				constants.AnnotationSidecarProxyLifecycle:              "true",
+				constants.AnnotationSidecarProxyShutdownDrainListeners: "true",
 				constants.AnnotationSidecarProxyShutdownGracePeriod:    "20",
 				constants.AnnotationSidecarProxyTerminationGracePeriod: "60",
 			},
@@ -1243,12 +1243,12 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 			webhook: MeshWebhook{
 				DefaultProxyLifecycleEnabled:       false,
 				DefaultProxyShutdownDrainListeners: true,
-				DefaultProxyShutdownGracePeriod:    30,
+				DefaultProxyShutdownGracePeriod:    gracefulShutdownSeconds,
 				DefaultProxyTerminationGracePeriod: 30,
 			},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyLifecycleEnabled:       "true",
-				constants.AnnotationSidecarProxyDrainListeners:         "false",
+				constants.AnnotationSidecarProxyLifecycle:              "true",
+				constants.AnnotationSidecarProxyShutdownDrainListeners: "false",
 				constants.AnnotationSidecarProxyShutdownGracePeriod:    "20",
 				constants.AnnotationSidecarProxyTerminationGracePeriod: "60",
 			},
@@ -1258,7 +1258,7 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 			webhook: MeshWebhook{
 				DefaultProxyLifecycleEnabled:       false,
 				DefaultProxyShutdownDrainListeners: true,
-				DefaultProxyShutdownGracePeriod:    30,
+				DefaultProxyShutdownGracePeriod:    gracefulShutdownSeconds,
 			},
 			annotations: nil,
 			expCmdArgs:  "",
@@ -1274,10 +1274,10 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 		},
 		"annotations disable lifecycle": {
 			webhook: MeshWebhook{
-				constants.AnnotationSidecarProxyLifecycleEnabled: "true",
+				DefaultProxyLifecycleEnabled: true,
 			},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyLifecycleEnabled: "false",
+				constants.AnnotationSidecarProxyLifecycle: "false",
 			},
 			expCmdArgs: "",
 		},
@@ -1285,12 +1285,12 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 			webhook: MeshWebhook{
 				DefaultProxyLifecycleEnabled:       false,
 				DefaultProxyShutdownDrainListeners: true,
-				DefaultProxyShutdownGracePeriod:    30,
+				DefaultProxyShutdownGracePeriod:    gracefulShutdownSeconds,
 			},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyLifecycleEnabled:    "true",
-				constants.AnnotationSidecarProxyDrainListeners:      "false",
-				constants.AnnotationSidecarProxyShutdownGracePeriod: "0",
+				constants.AnnotationSidecarProxyLifecycle:              "true",
+				constants.AnnotationSidecarProxyShutdownDrainListeners: "false",
+				constants.AnnotationSidecarProxyShutdownGracePeriod:    "0",
 			},
 			expCmdArgs: "",
 		},
@@ -1318,7 +1318,7 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 		"invalid termination grace period config": {
 			webhook: MeshWebhook{},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyShutdownTerminationPeriod: "invalid",
+				constants.AnnotationSidecarProxyTerminationGracePeriod: "invalid",
 			},
 			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-termination-grace-period:\"invalid\": quantities must match the regular expression",
 		},
