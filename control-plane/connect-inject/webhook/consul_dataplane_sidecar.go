@@ -247,13 +247,12 @@ func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi mu
 		args = append(args, fmt.Sprintf("-envoy-admin-bind-port=%d", 19000+mpi.serviceIndex))
 	}
 
-	if w.ConnectInject.Lifecycle.DefaultEnabled {
-		if w.ShutdownDrainListeners {
-			args = append(args, "-proxy-drain-listeners-enabled="+w.ShutdownDrainListeners)
+	if w.DefaultProxyLifecycleEnabled {
+		if w.DefaultProxyShutdownDrainListeners {
+			args = append(args, "-proxy-drain-listeners-enabled=true")
 		}
-		if w.ShutdownGracePeriod != "" {
-			// TODO: source default value from constant
-			args = append(args, "-proxy-shutdown-grace-period=30s")
+		if w.DefaultProxyShutdownGracePeriod != 0 {
+			args = append(args, fmt.Sprintf("-proxy-shutdown-grace-period=%d", w.DefaultProxyShutdownGracePeriod))
 		}
 	} else {
 		args = append(args, "-proxy-lifecycle-enabled=false")

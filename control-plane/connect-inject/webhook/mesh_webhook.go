@@ -151,6 +151,12 @@ type MeshWebhook struct {
 	DefaultProxyMemoryRequest resource.Quantity
 	DefaultProxyMemoryLimit   resource.Quantity
 
+	// Default lifecycle configuration for sidecar proxies.
+	DefaultProxyLifecycleEnabled       bool
+	DefaultProxyShutdownDrainListeners bool
+	DefaultProxyShutdownGracePeriod    int
+	DefaultProxyTerminationGracePeriod int
+
 	// Default Envoy concurrency flag, this is the number of worker threads to be used by the proxy.
 	DefaultEnvoyProxyConcurrency int
 
