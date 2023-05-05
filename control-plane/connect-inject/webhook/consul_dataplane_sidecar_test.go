@@ -1204,8 +1204,8 @@ func TestHandlerConsulDataplaneSidecar_Metrics(t *testing.T) {
 }
 
 func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
-	gracefulShutdownSeconds := resource.MustParse(10)
-	gracefulPort := resource.MustParse(20301)
+	gracefulShutdownSeconds := resource.MustParse("10s")
+	gracefulPort := resource.MustParse("20301")
 	gracefulShutdownPath := resource.MustParse("/shutdown")
 
 	cases := map[string]struct {
@@ -1221,10 +1221,10 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 		},
 		"all defaults, no annotations": {
 			webhook: MeshWebhook{
-				DefaultProxyCPURequest:    cpu1,
-				DefaultProxyCPULimit:      cpu2,
-				DefaultProxyMemoryRequest: mem1,
-				DefaultProxyMemoryLimit:   mem2,
+				DefaultProxyLifecycleEnabled:       true,
+				DefaultProxyShutdownDrainListeners: true,
+				DefaultProxyShutdownGracePeriod:    30,
+				DefaultProxyTerminationGracePeriod: 30,
 			},
 			annotations: nil,
 			expCmdArgs:  "",
@@ -1232,75 +1232,95 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 		"no defaults, all annotations": {
 			webhook: MeshWebhook{},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyCPURequest:    "100m",
-				constants.AnnotationSidecarProxyMemoryRequest: "100Mi",
-				constants.AnnotationSidecarProxyCPULimit:      "200m",
-				constants.AnnotationSidecarProxyMemoryLimit:   "200Mi",
+				constants.AnnotationSidecarProxyLifecycleEnabled:       "true",
+				constants.AnnotationSidecarProxyDrainListeners:         "true",
+				constants.AnnotationSidecarProxyShutdownGracePeriod:    "20",
+				constants.AnnotationSidecarProxyTerminationGracePeriod: "60",
 			},
 			expCmdArgs: "",
 		},
 		"annotations override defaults": {
 			webhook: MeshWebhook{
-				DefaultProxyCPURequest:    zero,
-				DefaultProxyCPULimit:      zero,
-				DefaultProxyMemoryRequest: zero,
-				DefaultProxyMemoryLimit:   zero,
+				DefaultProxyLifecycleEnabled:       false,
+				DefaultProxyShutdownDrainListeners: true,
+				DefaultProxyShutdownGracePeriod:    30,
+				DefaultProxyTerminationGracePeriod: 30,
 			},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyCPURequest:    "100m",
-				constants.AnnotationSidecarProxyMemoryRequest: "100Mi",
-				constants.AnnotationSidecarProxyCPULimit:      "200m",
-				constants.AnnotationSidecarProxyMemoryLimit:   "200Mi",
+				constants.AnnotationSidecarProxyLifecycleEnabled:       "true",
+				constants.AnnotationSidecarProxyDrainListeners:         "false",
+				constants.AnnotationSidecarProxyShutdownGracePeriod:    "20",
+				constants.AnnotationSidecarProxyTerminationGracePeriod: "60",
 			},
 			expCmdArgs: "",
 		},
-		"defaults set to zero, no annotations": {
+		"lifecycle disabled, no annotations": {
 			webhook: MeshWebhook{
-				DefaultProxyCPURequest:    zero,
-				DefaultProxyCPULimit:      zero,
-				DefaultProxyMemoryRequest: zero,
-				DefaultProxyMemoryLimit:   zero,
+				DefaultProxyLifecycleEnabled:       false,
+				DefaultProxyShutdownDrainListeners: true,
+				DefaultProxyShutdownGracePeriod:    30,
 			},
 			annotations: nil,
 			expCmdArgs:  "",
 		},
-		"annotations set to 0": {
-			webhook: MeshWebhook{},
+		"lifecycle enabled, defaults disabled, no annotations": {
+			webhook: MeshWebhook{
+				DefaultProxyLifecycleEnabled:       true,
+				DefaultProxyShutdownDrainListeners: false,
+				DefaultProxyShutdownGracePeriod:    0,
+			},
+			annotations: nil,
+			expCmdArgs:  "",
+		},
+		"annotations disable lifecycle": {
+			webhook: MeshWebhook{
+				constants.AnnotationSidecarProxyLifecycleEnabled: "true",
+			},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyCPURequest:    "0",
-				constants.AnnotationSidecarProxyMemoryRequest: "0",
-				constants.AnnotationSidecarProxyCPULimit:      "0",
-				constants.AnnotationSidecarProxyMemoryLimit:   "0",
+				constants.AnnotationSidecarProxyLifecycleEnabled: "false",
 			},
 			expCmdArgs: "",
 		},
-		"invalid cpu request": {
-			webhook: MeshWebhook{},
-			annotations: map[string]string{
-				constants.AnnotationSidecarProxyCPURequest: "invalid",
+		"annotations skip graceful shutdown": {
+			webhook: MeshWebhook{
+				DefaultProxyLifecycleEnabled:       false,
+				DefaultProxyShutdownDrainListeners: true,
+				DefaultProxyShutdownGracePeriod:    30,
 			},
-			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-cpu-request:\"invalid\": quantities must match the regular expression",
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyLifecycleEnabled:    "true",
+				constants.AnnotationSidecarProxyDrainListeners:      "false",
+				constants.AnnotationSidecarProxyShutdownGracePeriod: "0",
+			},
+			expCmdArgs: "",
 		},
-		"invalid cpu limit": {
+		"invalid proxy lifecycle config": {
 			webhook: MeshWebhook{},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyCPULimit: "invalid",
+				constants.AnnotationSidecarProxyLifecycle: "invalid",
 			},
-			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-cpu-limit:\"invalid\": quantities must match the regular expression",
+			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-lifecycle:\"invalid\": not a boolean value",
 		},
-		"invalid memory request": {
+		"invalid shutdown drain listeners config": {
 			webhook: MeshWebhook{},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyMemoryRequest: "invalid",
+				constants.AnnotationSidecarProxyShutdownDrainListeners: "invalid",
 			},
-			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-memory-request:\"invalid\": quantities must match the regular expression",
+			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-shutdown-drain-listeners:\"invalid\": not a boolean value",
 		},
-		"invalid memory limit": {
+		"invalid shutdown grace period config": {
 			webhook: MeshWebhook{},
 			annotations: map[string]string{
-				constants.AnnotationSidecarProxyMemoryLimit: "invalid",
+				constants.AnnotationSidecarProxyShutdownGracePeriod: "invalid",
 			},
-			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-memory-limit:\"invalid\": quantities must match the regular expression",
+			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-shutdown-grace-period:\"invalid\": quantities must match the regular expression",
+		},
+		"invalid termination grace period config": {
+			webhook: MeshWebhook{},
+			annotations: map[string]string{
+				constants.AnnotationSidecarProxyShutdownTerminationPeriod: "invalid",
+			},
+			expErr: "parsing annotation consul.hashicorp.com/sidecar-proxy-termination-grace-period:\"invalid\": quantities must match the regular expression",
 		},
 	}
 
