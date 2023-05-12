@@ -22,16 +22,71 @@ const (
 	LicenseSecretKey  = "key"
 )
 
-// TestConfig holds configuration for the test suite.
-type TestConfig struct {
-	Kubeconfig    string
+type KubeEnv struct {
+	KubeConfig    string
 	KubeContext   string
 	KubeNamespace string
+}
 
-	EnableMultiCluster     bool
-	SecondaryKubeconfig    string
-	SecondaryKubeContext   string
-	SecondaryKubeNamespace string
+func KubeEnvListFromStringList(kubeConfigs, kubeContexts, kubeNamespaces []string) []KubeEnv {
+	out := make([]KubeEnv, 0)
+	lenConf := len(kubeConfigs)
+	lenCtx := len(kubeContexts)
+	lenNs := len(kubeNamespaces)
+
+	// Determine the longest list length
+	maxLen := 0
+	if maxLen < lenConf {
+		maxLen = lenConf
+	}
+
+	if maxLen < lenCtx {
+		maxLen = lenCtx
+	}
+
+	if maxLen < lenNs {
+		maxLen = lenNs
+	}
+
+	// If all are empty, then return a single empty entry
+	if maxLen == 0 {
+		out = append(out, KubeEnv{})
+		return out
+	}
+
+	// Check if lists are of equal length
+	// If we require padding then we need to pad out the
+	// shorter lists
+	if lenConf != lenCtx || lenConf != lenNs || lenCtx != lenNs {
+		for i := lenConf; i < maxLen; i++ {
+			kubeConfigs = append(kubeConfigs, "")
+		}
+
+		for i := lenCtx; i < maxLen; i++ {
+			kubeContexts = append(kubeContexts, "")
+		}
+
+		for i := lenNs; i < maxLen; i++ {
+			kubeNamespaces = append(kubeNamespaces, "")
+		}
+	}
+
+	// Construct the kubeEnv
+	for k, v := range kubeConfigs {
+		kenv := KubeEnv{
+			KubeConfig:    v,
+			KubeContext:   kubeContexts[k],
+			KubeNamespace: kubeNamespaces[k],
+		}
+		out = append(out, kenv)
+	}
+
+	return out
+}
+
+// TestConfig holds configuration for the test suite.
+type TestConfig struct {
+	KubeEnvs []KubeEnv
 
 	EnableEnterprise  bool
 	EnterpriseLicense string
