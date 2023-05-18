@@ -339,6 +339,10 @@ spec:
                   name: {{ .Values.global.cloud.authUrl.secretName }}
                   key: {{ .Values.global.cloud.authUrl.secretKey }}
             {{- end}}
+            {{- if .Values.global.cloud.apiTLS }}
+            - name: HCP_API_TLS
+              value: {{ .Values.global.cloud.apiTLS }}
+            {{- end}}
             {{- if .Values.global.cloud.apiHost.secretName }}
             - name: HCP_API_HOST
               valueFrom:
@@ -352,6 +356,10 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.global.cloud.scadaAddress.secretName }}
                   key: {{ .Values.global.cloud.scadaAddress.secretKey }}
+            {{- end}}
+            {{- if .Values.global.cloud.scadaTLS }}
+            - name: HCP_SCADA_TLS
+              value: {{ .Values.global.cloud.scadaTLS }}
             {{- end}}
             {{- end }}
             {{- include "consul.extraEnvironmentVars" .Values.server | nindent 12 }}

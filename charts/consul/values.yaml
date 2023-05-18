@@ -628,6 +628,8 @@ global:
       # @type: string
       secretKey: null
 
+    apiTLS: ""
+
     # The name of the Kubernetes secret that holds the HCP cloud scada address.
     # This is optional when global.cloud.enabled is true.
     scadaAddress:
@@ -637,6 +639,8 @@ global:
       # The key within the Kubernetes secret that holds the scada address.
       # @type: string
       secretKey: null
+
+    scadaTLS: ""
 
   # Extra labels to attach to all pods, deployments, daemonsets, statefulsets, and jobs. This should be a YAML map.
   #
