@@ -1,4 +1,5 @@
 VERSION = $(shell ./control-plane/build-support/scripts/version.sh control-plane/version/version.go)
+CONSUL_IMAGE_VERSION = $(shell ./control-plane/build-support/scripts/consul-version.sh charts/consul/values.yaml)
 
 # ===========> Helm Targets
 
@@ -7,6 +8,10 @@ gen-helm-docs: ## Generate Helm reference docs from values.yaml and update Consu
 
 copy-crds-to-chart: ## Copy generated CRD YAML into charts/consul. Usage: make copy-crds-to-chart
 	@cd hack/copy-crds-to-chart; go run ./...
+
+generate-external-crds: ## Generate CRDs for externally defined CRDs and copy them to charts/consul. Usage: make generate-external-crds
+	@cd ./charts/consul/crds/; \
+		kustomize build | yq --split-exp '.metadata.name + ".yaml"' --no-doc
 
 bats-tests: ## Run Helm chart bats tests.
 	 bats --jobs 4 charts/consul/test/unit
@@ -64,7 +69,7 @@ cni-plugin-lint:
 	cd control-plane/cni; golangci-lint run -c ../../.golangci.yml
 
 ctrl-generate: get-controller-gen ## Run CRD code generation.
-	cd control-plane; $(CONTROLLER_GEN) object:headerFile="build-support/controller/boilerplate.go.txt" paths="./..."
+	cd control-plane; $(CONTROLLER_GEN) object paths="./..."
 
 # Helper target for doing local cni acceptance testing
 kind-cni:
@@ -123,6 +128,8 @@ lint: cni-plugin-lint ## Run linter in the control-plane, cli, and acceptance di
 ctrl-manifests: get-controller-gen ## Generate CRD manifests.
 	cd control-plane; $(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	make copy-crds-to-chart
+	make generate-external-crds
+	make add-copyright-header
 
 get-controller-gen: ## Download controller-gen program needed for operator SDK.
 ifeq (, $(shell which controller-gen))
@@ -139,6 +146,13 @@ else
 CONTROLLER_GEN=$(shell which controller-gen)
 endif
 
+add-copyright-header: ## Add copyright header to all files in the project
+ifeq (, $(shell which copywrite))
+	@echo "Installing copywrite"
+	@go install github.com/hashicorp/copywrite@latest
+endif
+	@copywrite headers --spdx "MPL-2.0" 
+
 # ===========> CI Targets
 
 ci.aws-acceptance-test-cleanup: ## Deletes AWS resources left behind after failed acceptance tests.
@@ -146,6 +160,9 @@ ci.aws-acceptance-test-cleanup: ## Deletes AWS resources left behind after faile
 
 version:
 	@echo $(VERSION)
+
+consul-version:
+	@echo $(CONSUL_IMAGE_VERSION)
 
 # ===========> Release Targets
 
@@ -156,7 +173,13 @@ endif
 ifndef RELEASE_DATE
 	$(error RELEASE_DATE is required, use format <Month> <Day>, <Year> (ex. October 4, 2022))
 endif
-	source $(CURDIR)/control-plane/build-support/scripts/functions.sh; prepare_release $(CURDIR) $(RELEASE_VERSION) "$(RELEASE_DATE)" $(LAST_RELEASE_GIT_TAG) $(PRERELEASE_VERSION)
+ifndef LAST_RELEASE_GIT_TAG 
+	$(error LAST_RELEASE_GIT_TAG is required)
+endif
+ifndef CONSUL_VERSION
+	$(error CONSUL_VERSION is required)
+endif
+	source $(CURDIR)/control-plane/build-support/scripts/functions.sh; prepare_release $(CURDIR) $(RELEASE_VERSION) "$(RELEASE_DATE)" $(LAST_RELEASE_GIT_TAG) $(CONSUL_VERSION) $(PRERELEASE_VERSION)
 
 prepare-dev:
 ifndef RELEASE_VERSION
@@ -168,12 +191,15 @@ endif
 ifndef NEXT_RELEASE_VERSION
 	$(error NEXT_RELEASE_VERSION is required)
 endif
-	source $(CURDIR)/control-plane/build-support/scripts/functions.sh; prepare_dev $(CURDIR) $(RELEASE_VERSION) "$(RELEASE_DATE)" $(NEXT_RELEASE_VERSION)
+ifndef NEXT_CONSUL_VERSION
+	$(error NEXT_CONSUL_VERSION is required)
+endif
+	source $(CURDIR)/control-plane/build-support/scripts/functions.sh; prepare_dev $(CURDIR) $(RELEASE_VERSION) "$(RELEASE_DATE)" "" $(NEXT_RELEASE_VERSION) $(NEXT_CONSUL_VERSION)
 
 # ===========> Makefile config
 
 .DEFAULT_GOAL := help
-.PHONY: gen-helm-docs copy-crds-to-chart bats-tests help ci.aws-acceptance-test-cleanup version cli-dev prepare-dev prepare-release
+.PHONY: gen-helm-docs copy-crds-to-chart generate-external-crds bats-tests help ci.aws-acceptance-test-cleanup version cli-dev prepare-dev prepare-release
 SHELL = bash
 GOOS?=$(shell go env GOOS)
 GOARCH?=$(shell go env GOARCH)

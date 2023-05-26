@@ -56,7 +56,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"kube-system namespace",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -76,7 +76,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"already injected",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -100,7 +100,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"empty pod basic",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -142,7 +142,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"pod with upstreams specified",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -201,7 +201,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"empty pod with injection disabled",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -227,7 +227,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"empty pod with injection truthy",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -282,7 +282,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"pod with empty volume mount annotation",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -336,7 +336,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"pod with volume mount annotation",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -410,7 +410,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"pod with sidecar volume mount annotation",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -470,7 +470,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"pod with sidecar invalid volume mount annotation",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -501,7 +501,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"pod with service annotation",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -556,7 +556,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"pod with existing label",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -606,7 +606,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"tproxy with overwriteProbes is enabled",
 			MeshWebhook{
-				Log:                    logrtest.TestLogger{T: t},
+				Log:                    logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet:  mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:   mapset.NewSet(),
 				EnableTransparentProxy: true,
@@ -629,14 +629,14 @@ func TestHandlerHandle(t *testing.T) {
 								{
 									Name: "web",
 									LivenessProbe: &corev1.Probe{
-										Handler: corev1.Handler{
+										ProbeHandler: corev1.ProbeHandler{
 											HTTPGet: &corev1.HTTPGetAction{
 												Port: intstr.FromInt(8080),
 											},
 										},
 									},
 									ReadinessProbe: &corev1.Probe{
-										Handler: corev1.Handler{
+										ProbeHandler: corev1.ProbeHandler{
 											HTTPGet: &corev1.HTTPGetAction{
 												Port: intstr.FromInt(8081),
 											},
@@ -696,7 +696,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"multiport pod kube < 1.24 with AuthMethod, serviceaccount has secret ref",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -755,7 +755,7 @@ func TestHandlerHandle(t *testing.T) {
 		{
 			"multiport pod kube 1.24 with AuthMethod, serviceaccount does not have secret ref",
 			MeshWebhook{
-				Log:                   logrtest.TestLogger{T: t},
+				Log:                   logrtest.NewTestLogger(t),
 				AllowK8sNamespacesSet: mapset.NewSetWith("*"),
 				DenyK8sNamespacesSet:  mapset.NewSet(),
 				decoder:               decoder,
@@ -809,6 +809,145 @@ func TestHandlerHandle(t *testing.T) {
 					Operation: "add",
 					Path:      "/metadata/labels",
 				},
+			},
+		},
+		{
+			"dns redirection enabled",
+			MeshWebhook{
+				Log:                    logrtest.NewTestLogger(t),
+				AllowK8sNamespacesSet:  mapset.NewSetWith("*"),
+				DenyK8sNamespacesSet:   mapset.NewSet(),
+				EnableTransparentProxy: true,
+				TProxyOverwriteProbes:  true,
+				decoder:                decoder,
+				Clientset:              defaultTestClientWithNamespace(),
+			},
+			admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Namespace: namespaces.DefaultNamespace,
+					Object: encodeRaw(t, &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels:      map[string]string{},
+							Annotations: map[string]string{constants.KeyConsulDNS: "true"},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "web",
+								},
+							},
+						},
+					}),
+				},
+			},
+			"",
+			[]jsonpatch.Operation{
+				{
+					Operation: "add",
+					Path:      "/spec/volumes",
+				},
+				{
+					Operation: "add",
+					Path:      "/spec/initContainers",
+				},
+				{
+					Operation: "add",
+					Path:      "/spec/containers/1",
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/labels",
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/" + escapeJSONPointer(constants.KeyInjectStatus),
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/" + escapeJSONPointer(constants.KeyTransparentProxyStatus),
+				},
+
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/" + escapeJSONPointer(constants.AnnotationOriginalPod),
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/" + escapeJSONPointer(constants.AnnotationConsulK8sVersion),
+				},
+				{
+					Operation: "add",
+					Path:      "/spec/dnsPolicy",
+				},
+				{
+					Operation: "add",
+					Path:      "/spec/dnsConfig",
+				},
+			},
+		},
+		{
+			"dns redirection only enabled if tproxy enabled",
+			MeshWebhook{
+				Log:                    logrtest.NewTestLogger(t),
+				AllowK8sNamespacesSet:  mapset.NewSetWith("*"),
+				DenyK8sNamespacesSet:   mapset.NewSet(),
+				EnableTransparentProxy: true,
+				TProxyOverwriteProbes:  true,
+				decoder:                decoder,
+				Clientset:              defaultTestClientWithNamespace(),
+			},
+			admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Namespace: namespaces.DefaultNamespace,
+					Object: encodeRaw(t, &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{},
+							Annotations: map[string]string{
+								constants.KeyConsulDNS:        "true",
+								constants.KeyTransparentProxy: "false",
+							},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "web",
+								},
+							},
+						},
+					}),
+				},
+			},
+			"",
+			[]jsonpatch.Operation{
+				{
+					Operation: "add",
+					Path:      "/spec/volumes",
+				},
+				{
+					Operation: "add",
+					Path:      "/spec/initContainers",
+				},
+				{
+					Operation: "add",
+					Path:      "/spec/containers/1",
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/labels",
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/" + escapeJSONPointer(constants.KeyInjectStatus),
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/" + escapeJSONPointer(constants.AnnotationOriginalPod),
+				},
+				{
+					Operation: "add",
+					Path:      "/metadata/annotations/" + escapeJSONPointer(constants.AnnotationConsulK8sVersion),
+				},
+				// Note: no DNS policy/config additions.
 			},
 		},
 	}
@@ -1463,7 +1602,7 @@ func TestOverwriteProbes(t *testing.T) {
 						},
 					},
 					ReadinessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8080),
 							},
@@ -1489,7 +1628,7 @@ func TestOverwriteProbes(t *testing.T) {
 						},
 					},
 					ReadinessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8080),
 							},
@@ -1516,7 +1655,7 @@ func TestOverwriteProbes(t *testing.T) {
 						},
 					},
 					ReadinessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8080),
 							},
@@ -1543,7 +1682,7 @@ func TestOverwriteProbes(t *testing.T) {
 						},
 					},
 					ReadinessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8080),
 							},
@@ -1570,7 +1709,7 @@ func TestOverwriteProbes(t *testing.T) {
 						},
 					},
 					LivenessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8081),
 							},
@@ -1606,21 +1745,21 @@ func TestOverwriteProbes(t *testing.T) {
 						},
 					},
 					LivenessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8081),
 							},
 						},
 					},
 					ReadinessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8080),
 							},
 						},
 					},
 					StartupProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8082),
 							},
@@ -1649,21 +1788,21 @@ func TestOverwriteProbes(t *testing.T) {
 						},
 					},
 					LivenessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8081),
 							},
 						},
 					},
 					ReadinessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8080),
 							},
 						},
 					},
 					StartupProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8080),
 							},
@@ -1683,21 +1822,21 @@ func TestOverwriteProbes(t *testing.T) {
 						},
 					},
 					LivenessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8083),
 							},
 						},
 					},
 					ReadinessProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8082),
 							},
 						},
 					},
 					StartupProbe: &corev1.Probe{
-						Handler: corev1.Handler{
+						ProbeHandler: corev1.ProbeHandler{
 							HTTPGet: &corev1.HTTPGetAction{
 								Port: intstr.FromInt(8082),
 							},

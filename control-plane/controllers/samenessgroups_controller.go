@@ -1,7 +1,11 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package controllers
 
 import (
 	"context"
+
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/go-logr/logr"
@@ -31,7 +35,7 @@ func (r *SamenessGroupController) Logger(name types.NamespacedName) logr.Logger 
 	return r.Log.WithValues("request", name)
 }
 
-func (r *SamenessGroupController) UpdateStatus(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+func (r *SamenessGroupController) UpdateStatus(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
 	return r.Status().Update(ctx, obj, opts...)
 }
 

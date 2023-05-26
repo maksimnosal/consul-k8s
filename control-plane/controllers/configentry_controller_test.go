@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -452,7 +453,7 @@ func TestConfigEntryControllers_createsConfigEntry(t *testing.T) {
 				req.True(written)
 			}
 
-			r := c.reconciler(fakeClient, testClient.Cfg, testClient.Watcher, logrtest.TestLogger{T: t})
+			r := c.reconciler(fakeClient, testClient.Cfg, testClient.Watcher, logrtest.NewTestLogger(t))
 			namespacedName := types.NamespacedName{
 				Namespace: kubeNS,
 				Name:      c.configEntryResource.KubernetesName(),
@@ -952,7 +953,7 @@ func TestConfigEntryControllers_updatesConfigEntry(t *testing.T) {
 				c.updateF(c.configEntryResource)
 				err = fakeClient.Update(ctx, c.configEntryResource)
 				req.NoError(err)
-				r := c.reconciler(fakeClient, testClient.Cfg, testClient.Watcher, logrtest.TestLogger{T: t})
+				r := c.reconciler(fakeClient, testClient.Cfg, testClient.Watcher, logrtest.NewTestLogger(t))
 				resp, err := r.Reconcile(ctx, ctrl.Request{
 					NamespacedName: namespacedName,
 				})
@@ -1344,7 +1345,7 @@ func TestConfigEntryControllers_deletesConfigEntry(t *testing.T) {
 					Namespace: kubeNS,
 					Name:      c.configEntryResourceWithDeletion.KubernetesName(),
 				}
-				r := c.reconciler(fakeClient, testClient.Cfg, testClient.Watcher, logrtest.TestLogger{T: t})
+				r := c.reconciler(fakeClient, testClient.Cfg, testClient.Watcher, logrtest.NewTestLogger(t))
 				resp, err := r.Reconcile(context.Background(), ctrl.Request{
 					NamespacedName: namespacedName,
 				})
@@ -1391,7 +1392,7 @@ func TestConfigEntryControllers_errorUpdatesSyncStatus(t *testing.T) {
 
 	reconciler := &ServiceDefaultsController{
 		Client: fakeClient,
-		Log:    logrtest.TestLogger{T: t},
+		Log:    logrtest.NewTestLogger(t),
 		ConfigEntryController: &ConfigEntryController{
 			ConsulClientConfig:  testClient.Cfg,
 			ConsulServerConnMgr: testClient.Watcher,
@@ -1458,7 +1459,7 @@ func TestConfigEntryControllers_setsSyncedToTrue(t *testing.T) {
 	consulClient := testClient.APIClient
 	reconciler := &ServiceDefaultsController{
 		Client: fakeClient,
-		Log:    logrtest.TestLogger{T: t},
+		Log:    logrtest.NewTestLogger(t),
 		ConfigEntryController: &ConfigEntryController{
 			ConsulClientConfig:  testClient.Cfg,
 			ConsulServerConnMgr: testClient.Watcher,
@@ -1550,7 +1551,7 @@ func TestConfigEntryControllers_doesNotCreateUnownedConfigEntry(t *testing.T) {
 				// Attempt to create the entry in Kube and run reconcile.
 				reconciler := ServiceDefaultsController{
 					Client: fakeClient,
-					Log:    logrtest.TestLogger{T: t},
+					Log:    logrtest.NewTestLogger(t),
 					ConfigEntryController: &ConfigEntryController{
 						ConsulClientConfig:  testClient.Cfg,
 						ConsulServerConnMgr: testClient.Watcher,
@@ -1614,7 +1615,7 @@ func TestConfigEntryControllers_doesNotDeleteUnownedConfig(t *testing.T) {
 			consulClient := testClient.APIClient
 			reconciler := &ServiceDefaultsController{
 				Client: fakeClient,
-				Log:    logrtest.TestLogger{T: t},
+				Log:    logrtest.NewTestLogger(t),
 				ConfigEntryController: &ConfigEntryController{
 					ConsulClientConfig:  testClient.Cfg,
 					ConsulServerConnMgr: testClient.Watcher,
@@ -1694,7 +1695,7 @@ func TestConfigEntryControllers_updatesStatusWhenDeleteFails(t *testing.T) {
 	testClient := test.TestServerWithMockConnMgrWatcher(t, nil)
 	testClient.TestServer.WaitForServiceIntentions(t)
 
-	logger := logrtest.TestLogger{T: t}
+	logger := logrtest.NewTestLogger(t)
 
 	svcDefaultsReconciler := ServiceDefaultsController{
 		Client: fakeClient,
@@ -1832,7 +1833,7 @@ func TestConfigEntryController_Migration(t *testing.T) {
 			require.True(t, success, "config entry was not created")
 
 			// Set up the reconciler.
-			logger := logrtest.TestLogger{T: t}
+			logger := logrtest.NewTestLogger(t)
 			svcDefaultsReconciler := ServiceDefaultsController{
 				Client: fakeClient,
 				Log:    logger,
@@ -1887,6 +1888,238 @@ func TestConfigEntryController_Migration(t *testing.T) {
 				require.NoError(t, err)
 				require.Contains(t, entry.GetMeta(), common.DatacenterKey)
 				require.Equal(t, "datacenter", entry.GetMeta()[common.DatacenterKey])
+			}
+		})
+	}
+}
+
+func TestConfigEntryControllers_assignServiceVirtualIP(t *testing.T) {
+	t.Parallel()
+	kubeNS := "default"
+
+	cases := []struct {
+		name                string
+		kubeKind            string
+		consulKind          string
+		consulPrereqs       []capi.ConfigEntry
+		configEntryResource common.ConfigEntryResource
+		service             corev1.Service
+		reconciler          func(client.Client, *consul.Config, consul.ServerConnectionManager, logr.Logger) Controller
+		expectErr           bool
+	}{
+		{
+			name:       "ServiceResolver no error and vip should be assigned",
+			kubeKind:   "ServiceResolver",
+			consulKind: capi.ServiceRouter,
+			configEntryResource: &v1alpha1.ServiceRouter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: kubeNS,
+				},
+				Spec: v1alpha1.ServiceRouterSpec{
+					Routes: []v1alpha1.ServiceRoute{
+						{
+							Match: &v1alpha1.ServiceRouteMatch{
+								HTTP: &v1alpha1.ServiceRouteHTTPMatch{
+									PathPrefix: "/admin",
+								},
+							},
+						},
+					},
+				},
+			},
+			service: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: kubeNS,
+				},
+				Spec: corev1.ServiceSpec{
+					ClusterIP: "10.0.0.1",
+					Ports: []corev1.ServicePort{
+						{
+							Port: 8081,
+						},
+					},
+				},
+			},
+			reconciler: func(client client.Client, cfg *consul.Config, watcher consul.ServerConnectionManager, logger logr.Logger) Controller {
+				return &ServiceRouterController{
+					Client: client,
+					Log:    logger,
+					ConfigEntryController: &ConfigEntryController{
+						ConsulClientConfig:  cfg,
+						ConsulServerConnMgr: watcher,
+						DatacenterName:      datacenterName,
+					},
+				}
+			},
+			expectErr: false,
+		},
+		{
+			name:       "ServiceRouter no error and vip should be assigned",
+			kubeKind:   "ServiceRouter",
+			consulKind: capi.ServiceRouter,
+			consulPrereqs: []capi.ConfigEntry{
+				&capi.ServiceConfigEntry{
+					Kind:     capi.ServiceDefaults,
+					Name:     "bar",
+					Protocol: "http",
+				},
+			},
+			configEntryResource: &v1alpha1.ServiceRouter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bar",
+					Namespace: kubeNS,
+				},
+				Spec: v1alpha1.ServiceRouterSpec{
+					Routes: []v1alpha1.ServiceRoute{
+						{
+							Match: &v1alpha1.ServiceRouteMatch{
+								HTTP: &v1alpha1.ServiceRouteHTTPMatch{
+									PathPrefix: "/admin",
+								},
+							},
+						},
+					},
+				},
+			},
+			service: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bar",
+					Namespace: kubeNS,
+				},
+				Spec: corev1.ServiceSpec{
+					ClusterIP: "10.0.0.2",
+					Ports: []corev1.ServicePort{
+						{
+							Port: 8081,
+						},
+					},
+				},
+			},
+			reconciler: func(client client.Client, cfg *consul.Config, watcher consul.ServerConnectionManager, logger logr.Logger) Controller {
+				return &ServiceRouterController{
+					Client: client,
+					Log:    logger,
+					ConfigEntryController: &ConfigEntryController{
+						ConsulClientConfig:  cfg,
+						ConsulServerConnMgr: watcher,
+						DatacenterName:      datacenterName,
+					},
+				}
+			},
+			expectErr: false,
+		},
+		{
+			name:       "ServiceRouter should fail because service does not have a valid IP address",
+			kubeKind:   "ServiceRouter",
+			consulKind: capi.ServiceRouter,
+			consulPrereqs: []capi.ConfigEntry{
+				&capi.ServiceConfigEntry{
+					Kind:     capi.ServiceDefaults,
+					Name:     "bar",
+					Protocol: "http",
+				},
+			},
+			configEntryResource: &v1alpha1.ServiceRouter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bar",
+					Namespace: kubeNS,
+				},
+				Spec: v1alpha1.ServiceRouterSpec{
+					Routes: []v1alpha1.ServiceRoute{
+						{
+							Match: &v1alpha1.ServiceRouteMatch{
+								HTTP: &v1alpha1.ServiceRouteHTTPMatch{
+									PathPrefix: "/admin",
+								},
+							},
+						},
+					},
+				},
+			},
+			service: corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bar",
+					Namespace: kubeNS,
+				},
+			},
+			reconciler: func(client client.Client, cfg *consul.Config, watcher consul.ServerConnectionManager, logger logr.Logger) Controller {
+				return &ServiceRouterController{
+					Client: client,
+					Log:    logger,
+					ConfigEntryController: &ConfigEntryController{
+						ConsulClientConfig:  cfg,
+						ConsulServerConnMgr: watcher,
+						DatacenterName:      datacenterName,
+					},
+				}
+			},
+			expectErr: true,
+		},
+		{
+			name:       "ServiceSplitter no error because a matching service does not exist",
+			kubeKind:   "ServiceSplitter",
+			consulKind: capi.ServiceSplitter,
+			consulPrereqs: []capi.ConfigEntry{
+				&capi.ServiceConfigEntry{
+					Kind:     capi.ServiceDefaults,
+					Name:     "foo",
+					Protocol: "http",
+				},
+			},
+			configEntryResource: &v1alpha1.ServiceSplitter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: kubeNS,
+				},
+				Spec: v1alpha1.ServiceSplitterSpec{
+					Splits: []v1alpha1.ServiceSplit{
+						{
+							Weight: 100,
+						},
+					},
+				},
+			},
+			reconciler: func(client client.Client, cfg *consul.Config, watcher consul.ServerConnectionManager, logger logr.Logger) Controller {
+				return &ServiceSplitterController{
+					Client: client,
+					Log:    logger,
+					ConfigEntryController: &ConfigEntryController{
+						ConsulClientConfig:  cfg,
+						ConsulServerConnMgr: watcher,
+						DatacenterName:      datacenterName,
+					},
+				}
+			},
+			expectErr: false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			s := runtime.NewScheme()
+			s.AddKnownTypes(v1alpha1.GroupVersion, c.configEntryResource)
+			s.AddKnownTypes(schema.GroupVersion{Group: "", Version: "v1"}, &corev1.Service{})
+			fakeClient := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(&c.service, c.configEntryResource).Build()
+
+			testClient := test.TestServerWithMockConnMgrWatcher(t, nil)
+			testClient.TestServer.WaitForLeader(t)
+			consulClient := testClient.APIClient
+
+			ctrl := c.reconciler(fakeClient, testClient.Cfg, testClient.Watcher, logrtest.NewTestLogger(t))
+			namespacedName := types.NamespacedName{
+				Namespace: kubeNS,
+				Name:      c.configEntryResource.KubernetesName(),
+			}
+
+			err := assignServiceVirtualIP(ctx, ctrl.Logger(namespacedName), consulClient, ctrl, namespacedName, c.configEntryResource, "dc1")
+			if err != nil {
+				require.True(t, c.expectErr)
+			} else {
+				require.False(t, c.expectErr)
 			}
 		})
 	}
