@@ -148,7 +148,7 @@ spec:
       containers:
       - name: consul-telemetry-collector
         image: {{ .Values.telemetryCollector.image }}
-        imagePullPolicy: Always
+        imagePullPolicy: Never
         ports:
         - containerPort: 9090
           name: metrics
