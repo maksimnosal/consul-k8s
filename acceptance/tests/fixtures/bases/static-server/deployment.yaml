@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: static-server
-          image: docker.mirror.hashicorp.services/hashicorp/http-echo:latest
+          image: docker.mirror.hashicorp.services/hashicorp/http-echo:alpine
           args:
             - -text="hello world"
             - -listen=:8080

@@ -628,8 +628,6 @@ global:
       # @type: string
       secretKey: null
 
-    apiTLS: ""
-
     # The name of the Kubernetes secret that holds the HCP cloud scada address.
     # This is optional when global.cloud.enabled is true.
     scadaAddress:
@@ -640,7 +638,6 @@ global:
       # @type: string
       secretKey: null
 
-    scadaTLS: ""
 
   # Extra labels to attach to all pods, deployments, daemonsets, statefulsets, and jobs. This should be a YAML map.
   #
@@ -654,6 +651,21 @@ global:
   #
   # @type: map
   extraLabels: {}
+
+  # Optional PEM-encoded CA certificates that will be added to trusted system CAs.
+  #
+  # Example:
+  #
+  # ```yaml
+  # trustedCAs: [
+  #   |
+  #   -----BEGIN CERTIFICATE-----
+  #   MIIC7jCCApSgAwIBAgIRAIq2zQEVexqxvtxP6J0bXAwwCgYIKoZIzj0EAwIwgbkx
+  #   ...
+  # ]
+  # ```
+  # @type: array<string>
+  trustedCAs: [ ]
 
 # Server, when enabled, configures a server cluster to run. This should
 # be disabled if you plan on connecting to a Consul cluster external to
@@ -3174,3 +3186,10 @@ telemetryCollector:
   # Optional priorityClassName.
   # @type: string
   priorityClassName: ""
+
+  # A list of extra environment variables to set within the stateful set.
+  # These could be used to include proxy settings required for cloud auto-join
+  # feature, in case kubernetes cluster is behind egress http proxies. Additionally,
+  # it could be used to configure custom consul parameters.
+  # @type: map
+  extraEnvironmentVars: { }
