@@ -16,10 +16,10 @@ var suite testsuite.Suite
 func TestMain(m *testing.M) {
 	suite = testsuite.NewSuite(m)
 
-	if suite.Config().EnableMultiCluster {
+	if len(suite.Config().KubeEnvs) < 2 {
 		os.Exit(suite.Run())
 	} else {
-		fmt.Println("Skipping partitions tests because -enable-multi-cluster is not set")
+		fmt.Println("Skipping partitions tests because there are not enough context available for multicluster")
 		os.Exit(0)
 	}
 }

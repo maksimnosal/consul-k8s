@@ -8,13 +8,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/consul-k8s/acceptance/framework/config"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/environment"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/vault"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/go-version"
@@ -22,6 +15,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/hashicorp/consul-k8s/acceptance/framework/config"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/environment"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/vault"
 )
 
 // Test that WAN federation via Mesh gateways works with Vault
@@ -34,8 +35,8 @@ func TestVault_WANFederationViaGateways(t *testing.T) {
 	if cfg.UseKind {
 		t.Skipf("Skipping this test because it's currently flaky on kind")
 	}
-	if !cfg.EnableMultiCluster {
-		t.Skipf("skipping this test because -enable-multi-cluster is not set")
+	if len(suite.Config().KubeEnvs) < 2 {
+		t.Skipf("skipping this test because there are not enough context available for multicluster")
 	}
 	ver, err := version.NewVersion("1.12.0")
 	require.NoError(t, err)
@@ -44,7 +45,7 @@ func TestVault_WANFederationViaGateways(t *testing.T) {
 	}
 
 	primaryCtx := suite.Environment().DefaultContext(t)
-	secondaryCtx := suite.Environment().Context(t, suite.Environment().GetSecondaryContextKey(t))
+	secondaryCtx := suite.Environment().NthContext(t, 1)
 
 	ns := primaryCtx.KubectlOptions(t).Namespace
 

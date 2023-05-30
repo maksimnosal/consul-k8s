@@ -13,12 +13,6 @@ import (
 	"github.com/gruntwork-io/terratest/modules/helm"
 	terratestk8s "github.com/gruntwork-io/terratest/modules/k8s"
 	terratestLogger "github.com/gruntwork-io/terratest/modules/logger"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/cli"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/config"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/environment"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/sdk/testutil/retry"
 	"github.com/stretchr/testify/require"
@@ -26,6 +20,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/hashicorp/consul-k8s/acceptance/framework/cli"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/config"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/environment"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
 )
 
 const (

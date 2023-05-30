@@ -640,9 +640,7 @@ For example, to run mesh gateway tests, which require two Kubernetes clusters,
 you may use the following command:
 
     go test ./... -p 1 -timeout 20m \
-        -enable-multi-cluster \
-        -kubecontext=<name of the primary Kubernetes context> \
-        -secondary-kubecontext=<name of the secondary Kubernetes context>
+        -kubecontexts=<name of the primary Kubernetes context>,<name of the secondary Kubernetes context>
 
 Below is the list of available flags:
 
@@ -655,8 +653,6 @@ Below is the list of available flags:
     The directory where to write debug information about failed test runs, such as logs and pod definitions. If not provided, a temporary directory will be created by the tests.
 -enable-enterprise
     If true, the test suite will run tests for enterprise features. Note that some features may require setting the enterprise license flag below or the env var CONSUL_ENT_LICENSE.
--enable-multi-cluster
-    If true, the tests that require multiple Kubernetes clusters will be run. At least one of -secondary-kubeconfig or -secondary-kubecontext is required when this flag is used.
 -enable-openshift
     If true, the tests will automatically add Openshift Helm value for each Helm install.
 -enable-pod-security-policies
@@ -666,12 +662,12 @@ Below is the list of available flags:
     This applies only to tests that enable connectInject.
 -enterprise-license
     The enterprise license for Consul.
--kubeconfig string
-    The path to a kubeconfig file. If this is blank, the default kubeconfig path (~/.kube/config) will be used.
+-kubeconfigs []string
+    The list of paths to a kubeconfig files. If this is blank, the default kubeconfig path (~/.kube/config) will be used.
 -kubecontext string
-    The name of the Kubernetes context to use. If this is blank, the context set as the current context will be used by default.
--namespace string
-    The Kubernetes namespace to use for tests. (default "default")
+    The list of names of the Kubernetes contexts to use. If this is blank, the context set as the current context will be used by default.
+-namespaces string
+    The list Kubernetes namespace to use for tests. (default "default")
 -no-cleanup-on-failure
     If true, the tests will not cleanup Kubernetes resources they create when they finish running.Note this flag must be run with -failfast flag, otherwise subsequent tests will fail.
 -secondary-kubeconfig string

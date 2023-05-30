@@ -10,13 +10,14 @@ import (
 	"time"
 
 	terratestk8s "github.com/gruntwork-io/terratest/modules/k8s"
+	"github.com/hashicorp/consul/api"
+	"github.com/hashicorp/consul/sdk/testutil/retry"
+	"github.com/stretchr/testify/require"
+
 	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
 	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
 	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
 	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
-	"github.com/hashicorp/consul/api"
-	"github.com/hashicorp/consul/sdk/testutil/retry"
-	"github.com/stretchr/testify/require"
 )
 
 // Test that Sync Catalog works in a default and ACLsEnabled installations for partitions.
@@ -81,7 +82,7 @@ func TestPartitions_Sync(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			primaryClusterContext := env.DefaultContext(t)
-			secondaryClusterContext := env.Context(t, env.GetSecondaryContextKey(t))
+			secondaryClusterContext := env.NthContext(t, 1)
 
 			commonHelmValues := map[string]string{
 				"global.adminPartitions.enabled": "true",

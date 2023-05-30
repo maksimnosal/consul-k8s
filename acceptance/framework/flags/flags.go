@@ -10,8 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/consul-k8s/acceptance/framework/config"
 	"github.com/hashicorp/go-version"
+
+	"github.com/hashicorp/consul-k8s/acceptance/framework/config"
 )
 
 type TestFlags struct {
@@ -79,7 +80,7 @@ func (t *TestFlags) init() {
 	flag.StringVar(&t.flagVaultServerVersion, "vault-server-version", "", "The vault serverversion used for all tests.")
 	flag.StringVar(&t.flagVaultHelmChartVersion, "vault-helm-chart-version", "", "The Vault helm chart used for all tests.")
 
-	flag.Var(&t.flagKubeconfigs, "kubeconfigs", "The list of paths to a kubeconfig files. If this is blank, "+
+	flag.Var(&t.flagKubeconfigs, "kubeconfigs", "The list of paths to kubeconfig files. If this is blank, "+
 		"the default kubeconfig path (~/.kube/config) will be used.")
 	flag.Var(&t.flagKubecontexts, "kubecontexts", "The list of names of the Kubernetes contexts to use. If this is blank, "+
 		"the context set as the current context will be used by default.")
@@ -128,6 +129,7 @@ func (t *TestFlags) init() {
 }
 
 func (t *TestFlags) Validate() error {
+
 	if t.flagEnableEnterprise && t.flagEnterpriseLicense == "" {
 		return errors.New("-enable-enterprise provided without setting env var CONSUL_ENT_LICENSE with consul license")
 	}

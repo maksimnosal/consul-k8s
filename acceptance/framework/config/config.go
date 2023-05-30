@@ -28,6 +28,7 @@ type KubeEnv struct {
 	KubeNamespace string
 }
 
+// TODO (dans): consider cleaning up this logic. I don't think it makes sense to pad configs, contexts and namespaces like this
 func KubeEnvListFromStringList(kubeConfigs, kubeContexts, kubeNamespaces []string) []KubeEnv {
 	out := make([]KubeEnv, 0)
 	lenConf := len(kubeConfigs)

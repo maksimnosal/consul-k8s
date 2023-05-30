@@ -10,14 +10,15 @@ import (
 	"testing"
 
 	terratestk8s "github.com/gruntwork-io/terratest/modules/k8s"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/sdk/testutil/retry"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
 )
 
 const StaticClientName = "static-client"
@@ -84,7 +85,7 @@ func TestPartitions_Connect(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			defaultPartitionClusterContext := env.DefaultContext(t)
-			secondaryPartitionClusterContext := env.Context(t, env.GetSecondaryContextKey(t))
+			secondaryPartitionClusterContext := env.NthContext(t, 1)
 
 			commonHelmValues := map[string]string{
 				"global.adminPartitions.enabled": "true",

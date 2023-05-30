@@ -8,24 +8,25 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
-	"github.com/hashicorp/consul-k8s/acceptance/framework/vault"
 	"github.com/hashicorp/go-uuid"
 	"github.com/hashicorp/go-version"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/hashicorp/consul-k8s/acceptance/framework/consul"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/helpers"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/k8s"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
+	"github.com/hashicorp/consul-k8s/acceptance/framework/vault"
 )
 
 func TestVault_Partitions(t *testing.T) {
 	env := suite.Environment()
 	cfg := suite.Config()
 	serverClusterCtx := env.DefaultContext(t)
-	clientClusterCtx := env.Context(t, env.GetSecondaryContextKey(t))
+	clientClusterCtx := env.NthContext(t, 1)
 	ns := serverClusterCtx.KubectlOptions(t).Namespace
 
 	const secondaryPartition = "secondary"
@@ -38,8 +39,8 @@ func TestVault_Partitions(t *testing.T) {
 	if !cfg.EnableEnterprise {
 		t.Skipf("skipping this test because -enable-enterprise is not set")
 	}
-	if !cfg.EnableMultiCluster {
-		t.Skipf("skipping this test because -enable-multi-cluster is not set")
+	if len(suite.Config().KubeEnvs) < 2 {
+		t.Skipf("skipping this test because there are not enough context available for multicluster")
 	}
 	vaultReleaseName := helpers.RandomName()
 	consulReleaseName := helpers.RandomName()
