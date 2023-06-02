@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -24,7 +25,7 @@ import (
 	"github.com/hashicorp/consul-k8s/control-plane/connect-inject/metrics"
 	"github.com/hashicorp/consul-k8s/control-plane/connect-inject/webhook"
 	"github.com/hashicorp/consul-k8s/control-plane/controllers"
-	mutatingwebhookconfiguration "github.com/hashicorp/consul-k8s/control-plane/helper/mutating-webhook-configuration"
+	webhookconfiguration "github.com/hashicorp/consul-k8s/control-plane/helper/webhook-configuration"
 	"github.com/hashicorp/consul-k8s/control-plane/subcommand/common"
 	"github.com/hashicorp/consul-k8s/control-plane/subcommand/flags"
 	"github.com/hashicorp/consul-server-connection-manager/discovery"
@@ -42,6 +43,7 @@ import (
 	ctrlRuntimeWebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 	gwv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gwv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
+	gatewayadmission "sigs.k8s.io/gateway-api/pkg/admission"
 )
 
 const (
@@ -817,6 +819,7 @@ func (c *Command) Run(args []string) int {
 			Logger:     ctrl.Log.WithName("webhooks").WithName(apicommon.JWTProvider),
 			ConsulMeta: consulMeta,
 		}})
+	mgr.GetWebhookServer().Register("/validate-sig-gateway", http.HandlerFunc(gatewayadmission.ServeHTTP))
 
 	if c.flagEnableWebhookCAUpdate {
 		err = c.updateWebhookCABundle(ctx)
@@ -841,7 +844,7 @@ func (c *Command) updateWebhookCABundle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = mutatingwebhookconfiguration.UpdateWithCABundle(ctx, c.clientset, webhookConfigName, caCert)
+	err = webhookconfiguration.UpdateWithCABundle(ctx, c.clientset, webhookConfigName, caCert)
 	if err != nil {
 		return err
 	}
