@@ -156,10 +156,10 @@ func TestRemoteDevCloud(t *testing.T) {
 		"global.gossipEncryption.autoGenerate": "false",
 		"global.tls.enabled":                   "true",
 		"global.tls.enableAutoEncrypt":         "true",
-		"global.image":                         "consul:local",
+		"global.image":                         "docker.mirror.hashicorp.services/hashicorppreview/consul:1.15-dev",
 
 		"telemetryCollector.enabled":                   "true",
-		"telemetryCollector.image":                     "consul-telemetry-collector:latest",
+		"telemetryCollector.image":                     "consul-telemetry-collector:local",
 		"telemetryCollector.cloud.clientId.secretName": clientIDSecretName,
 		"telemetryCollector.cloud.clientId.secretKey":  clientIDSecretKey,
 
@@ -168,26 +168,46 @@ func TestRemoteDevCloud(t *testing.T) {
 		// Either we set the global.trustedCAs (make sure it's idented exactly) or we
 		// set TLS to insecure
 
-		"telemetryCollector.extraEnvironmentVars.HCP_API_ADDRESS": apiHostSecretKeyValue,
+		"telemetryCollector.extraEnvironmentVars.HCP_AUTH_TLS":  "insecure",
+		"telemetryCollector.extraEnvironmentVars.HCP_SCADA_TLS": "insecure",
+		// "telemetryCollector.extraEnvironmentVars.HCP_API_ADDRESS": apiHostSecretKeyValue,
+		// "telemetryCollector.extraEnvironmentVars.OTLP_EXPORTER_TLS": "disabled",
+
+		"server.extraEnvironmentVars.HCP_API_TLS":   "insecure",
+		"server.extraEnvironmentVars.HCP_AUTH_TLS":  "insecure",
+		"server.extraEnvironmentVars.HCP_SCADA_TLS": "insecure",
+
+		// This is pregenerated CA used for testing. It can be replaced at any time and isn't
+		// meant for anything other than testing
+		// 		"global.trustedCAs[0]": `-----BEGIN CERTIFICATE-----
+		// MIICrjCCAZYCCQD5LxMcnMY8rDANBgkqhkiG9w0BAQsFADAZMRcwFQYDVQQDDA5m
+		// YWtlLXNlcnZlci1jYTAeFw0yMzA1MTkxMjIwMzhaFw0zMzA1MTYxMjIwMzhaMBkx
+		// FzAVBgNVBAMMDmZha2Utc2VydmVyLWNhMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A
+		// MIIBCgKCAQEAwhbiII7sMultedFzQVhVZz5Ti+9lWrpZb8y0ZR6NaNvoxDPX151t
+		// Adh5NegSeH/+351iDBGZHhmKECtBuk8FJgk88O7y8A7Yg+/lyeZd0SJTEeiYUe7d
+		// sSaBTYSmixyn6s15Y5MVp9gM7t2YXrocRkFxDtdhLMWf0zwzJEwDouFMMiFZw5II
+		// yDbI6UfwKyB8C8ln10+TcczbheaOMQ1jGn35YWAG/LEdutU6DO2Y/GZYQ41nyLF1
+		// klqh34USQPVQSQW7R7GiDxyhh1fGaDF6RAzH4RerzQSNvvTHmBXIGurB/Hnu1n3p
+		// CwWeatWMU5POy1es73S/EPM0NpWD5RabSwIDAQABMA0GCSqGSIb3DQEBCwUAA4IB
+		// AQBayoTltSW55PvKVp9cmqGOBMlkIMKPd6Ny4bCb/3UF+3bzQmIblh3O3kEt7WoY
+		// fA9vp+6cSRGVqgBfR2bi40RrerLNA79yywIZjfBMteNuRoul5VeD+mLyFCo4197r
+		// Atl2TEx2kl2V8rjCsEBcTqKqetVOMLYEZ2tbCeUt1A/K7OzaJfHgelEYcsVt68Q9
+		// /BLoo2UXfOpRrcsx7u7s5HPVbG3bx+1MvGJZ2C3i0B6agnkGDzEpoM4KZGxEefB9
+		// DOHIJfie9d9BQD52nZh3SGHz0b3vfJ430XrQmaNZ26fuIEyIYrpvyAhBXckj2iTD
+		// 1TXpqr/1D7EUbddktyhXTK9e
+		// -----END CERTIFICATE-----`,
 	}
 
 	consulCluster := consul.NewHelmCluster(t, helmValues, suite.Environment().DefaultContext(t), suite.Config(), releaseName)
 	consulCluster.Create(t)
 
 	// TODO remove once Nick makes this part of the standard k8s run
-	logger.Log(t, "creating proxy defaults that sets envoy_telemetry_collector_bind_socket_dir")
-	kustomizeDir := "../fixtures/bases/cloud/proxydefaults"
-	k8s.KubectlApplyK(t, ctx.KubectlOptions(t), kustomizeDir)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, func() {
-		k8s.KubectlDeleteK(t, ctx.KubectlOptions(t), kustomizeDir)
-	})
-
-	logger.Log(t, "setting acl permissions for collector and services")
-	aclDir := "../fixtures/bases/cloud/service-intentions"
-	k8s.KubectlApplyK(t, ctx.KubectlOptions(t), aclDir)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, func() {
-		k8s.KubectlDeleteK(t, ctx.KubectlOptions(t), aclDir)
-	})
+	// logger.Log(t, "creating proxy defaults that sets envoy_telemetry_collector_bind_socket_dir")
+	// kustomizeDir := "../fixtures/bases/cloud/proxydefaults"
+	// k8s.KubectlApplyK(t, ctx.KubectlOptions(t), kustomizeDir)
+	// helpers.Cleanup(t, cfg.NoCleanupOnFailure, func() {
+	// k8s.KubectlDeleteK(t, ctx.KubectlOptions(t), kustomizeDir)
+	// })
 
 	logger.Log(t, "creating static-server deployment")
 	k8s.DeployKustomize(t, ctx.KubectlOptions(t), cfg.NoCleanupOnFailure, cfg.DebugDirectory, "../fixtures/bases/static-server")
