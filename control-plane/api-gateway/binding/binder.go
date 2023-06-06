@@ -4,6 +4,8 @@
 package binding
 
 import (
+	"fmt"
+
 	mapset "github.com/deckarep/golang-set"
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/consul-k8s/control-plane/api-gateway/common"
@@ -54,7 +56,7 @@ type BinderConfig struct {
 	Service *corev1.Service
 
 	// ConsulGateway is the config entry we've created in Consul.
-	ConsulGateway *api.APIGatewayConfigEntry
+	ConsulGateway *api.APIGatewayConfigEntry // If this is Not nil, take the status and jam it into the Gateway Status
 	// GatewayServices are the services associated with the Gateway
 	ConsulGatewayServices []api.CatalogService
 
@@ -224,6 +226,33 @@ func (b *Binder) Snapshot() *Snapshot {
 		for _, condition := range gatewayValidation.Conditions(b.config.Gateway.Generation, listenerValidation.Invalid()) {
 			status.Conditions, _ = setCondition(status.Conditions, condition)
 		}
+		if b.config.ConsulGateway != nil {
+			message := b.config.ConsulGateway.Status
+			fmt.Println(message)
+			// Just grab the accepted condition that doesn't have any resource references
+			// Use setCondition to set it
+			// Create a helper function to filter
+			// Create maybe a helper function to construct the condition
+		}
+		/*
+			if consul condition == condition:
+				consul gateway status
+
+			consulAccepted?
+			reason: Accepted | Not Accepted
+			status: T/F
+			Message: ConsulGateway.StatusAccepted + Message info
+
+			Filter out the accepted w/o any resource refs associated.
+			Resource ref must be empty struct.
+
+			Check if status is true, set reason to accepted.
+			False, not accepted
+
+			Drop the status if the Consul Gateway is Nil
+
+			Test this as part of Acceptance Tests
+		*/
 		status.Addresses = addressesForGateway(b.config.Service, registrationPods)
 
 		// only mark the gateway as needing a status update if there's a diff with its old

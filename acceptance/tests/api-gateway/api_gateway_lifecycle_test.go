@@ -276,6 +276,8 @@ func TestAPIGateway_Lifecycle(t *testing.T) {
 	// make sure it exists
 	logger.Log(t, "checking that gateway one is synchronized to Consul")
 	checkConsulExists(t, consulClient, api.APIGateway, controlledGatewayOneName)
+	// Pull in the Gateway and check it's statuses
+	// It should have both synced is true and status is accepted
 
 	// make sure our certificate exists
 	logger.Log(t, "checking that the certificate is synchronized to Consul")
@@ -357,6 +359,8 @@ func checkRouteBound(t *testing.T, client client.Client, name, namespace, parent
 		checkStatusCondition(r, route.Status.Parents[0].Conditions, trueCondition("Synced", "Synced"))
 	})
 }
+
+// Check status helper function
 
 func updateKubernetes[T client.Object](t *testing.T, k8sClient client.Client, o T, fn func(o T)) {
 	t.Helper()
