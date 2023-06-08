@@ -92,6 +92,10 @@ kind-cni:
 	kind create cluster --config=$(CURDIR)/acceptance/framework/environment/cni-kind/kind.config --name dc2 --image kindest/node:v1.23.6
 	make kind-cni-calico
 
+#Helper target for doing local api gateway conformance testing
+run-api-gateway-conformance:
+	@$(SHELL) $(CURDIR)/hack/run-api-gateway-conformance-tests/run_conformance_tests_locally.sh
+
 # Perform a terraform fmt check but don't change anything
 terraform-fmt-check:
 	@$(CURDIR)/control-plane/build-support/scripts/terraformfmtcheck.sh $(TERRAFORM_DIR)
