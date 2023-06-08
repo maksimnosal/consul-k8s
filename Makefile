@@ -96,6 +96,10 @@ kind-cni:
 run-api-gateway-conformance:
 	@$(SHELL) $(CURDIR)/hack/run-api-gateway-conformance-tests/run_conformance_tests_locally.sh
 
+#Helper target to cleanup resources created by conformance testing
+cleanup-api-gateway-conformance:
+	@$(SHELL) $(CURDIR)/hack/run-api-gateway-conformance-tests/cleanup_conformance_tests_locally.sh
+
 # Perform a terraform fmt check but don't change anything
 terraform-fmt-check:
 	@$(CURDIR)/control-plane/build-support/scripts/terraformfmtcheck.sh $(TERRAFORM_DIR)
