@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/consul-k8s/control-plane/namespaces"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/go-multierror"
+	"github.com/mitchellh/hashstructure/v2"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -122,12 +123,18 @@ type EndpointsController struct {
 
 	nodeMapMutex            sync.Mutex
 	serviceToNodeAddressMap map[string]map[string]string
-	serviceInstanceMap      map[string]bool
+	serviceInstanceMap      map[string]uint64
 }
 
 type addressHealth struct {
 	address corev1.EndpointAddress
 	health  string
+}
+
+type svcRegistration struct {
+	id      string
+	proxy   *api.AgentServiceConnectProxyConfig
+	connect *api.AgentServiceConnect
 }
 
 func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -197,9 +204,6 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 			deletedAddressMap[r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)][instanceName]] = true
 		}
 	}
-	r.Log.Info(fmt.Sprintf("at the end of reconcile the service to node address map is %v and deleted services map is %v", r.serviceToNodeAddressMap, deletedAddressMap))
-	r.Log.Info(fmt.Sprintf("at the end of reconcile the node address map is %v ", nodeAddressMap))
-	r.Log.Info(fmt.Sprintf("at the end of reconcile the service instance map is %v ", r.serviceInstanceMap))
 
 	// Compare service instances in Consul with addresses in Endpoints. If an address is not in Endpoints, deregister
 	// from Consul. This uses endpointAddressMap which is populated with the addresses in the Endpoints object during
@@ -319,17 +323,26 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 		if managedByEndpointsController {
 			nodeAddressMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = podHostIP
 		}
+		// Get information from the pod to create service instance registrations.
+		serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
+		if err != nil {
+			r.Log.Error(err, "failed to create service registrations for endpoints", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
+			return err
+		}
+		registration := svcRegistration{
+			id:      serviceRegistration.ID,
+			proxy:   serviceRegistration.Proxy,
+			connect: serviceRegistration.Connect,
+		}
+		svcRegHash, err := hashstructure.Hash(registration, hashstructure.FormatV2, nil)
+		if err != nil {
+			r.Log.Error(err, "failed to hash service registration", "name", serviceRegistration.Name)
+			return err
+		}
 		// For pods managed by this controller, create and register the service instance.
-		if _, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]; !ok && managedByEndpointsController {
-			// Get information from the pod to create service instance registrations.
-			serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
-			if err != nil {
-				r.Log.Error(err, "failed to create service registrations for endpoints", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
-				return err
-			}
-
+		if hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]; (!ok || hash != svcRegHash) && managedByEndpointsController {
 			if r.serviceInstanceMap == nil {
-				r.serviceInstanceMap = map[string]bool{}
+				r.serviceInstanceMap = map[string]uint64{}
 			}
 
 			// Register the service instance with the local agent.
@@ -352,7 +365,7 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 				return err
 			}
 
-			r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = true
+			r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = svcRegHash
 		}
 
 		// Update the service TTL health check for both legacy services and services managed by endpoints
@@ -789,7 +802,6 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 				concurrentCalls = i
 			}
 		}
-		r.Log.Info(fmt.Sprintf("service to node address map right before delete all is %v", r.serviceToNodeAddressMap))
 		if concurrentCalls > len(r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)]) {
 			concurrentCalls = len(r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)])
 		}
@@ -813,8 +825,12 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 				}
 			}()
 		}
-
+		nodes := map[string]bool{}
 		for _, nodeAddress := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)] {
+			nodes[nodeAddress] = true
+		}
+
+		for nodeAddress := range nodes {
 			nodeChan <- nodeAddress
 		}
 		close(nodeChan)
@@ -826,7 +842,6 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 			return fmt.Errorf("some deregisterServiceOnAgents tasks were not successful")
 		}
 	} else {
-		r.Log.Info(fmt.Sprintf("the delete address map is %v", deletedAddressMap))
 		for nodeAddress := range deletedAddressMap {
 			if _, ok := agentAddresses[nodeAddress]; !ok {
 				continue
@@ -872,7 +887,6 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 }
 
 func deleteService(r *EndpointsController, nodeAddress string, agentAddresses map[string]bool, k8sSvcName string, k8sSvcNamespace string, consulNS string) error {
-	r.Log.Info(fmt.Sprintf("delete service info %v and %v", agentAddresses, nodeAddress))
 	if _, ok := agentAddresses[nodeAddress]; !ok {
 		return nil
 	}
@@ -927,7 +941,7 @@ func (r *EndpointsController) setupNodeToServiceMap(ctx context.Context, req ctr
 	}
 
 	r.serviceToNodeAddressMap = map[string]map[string]string{}
-	r.serviceInstanceMap = map[string]bool{}
+	r.serviceInstanceMap = map[string]uint64{}
 	// Control the number of concurrent calls that can be made to agents
 	var concurrentCalls = 30
 	if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
@@ -1274,7 +1288,17 @@ func (r *EndpointsController) populateServiceToNodeMap(agent corev1.Pod, consulN
 			r.serviceToNodeAddressMap[serviceKey] = map[string]string{}
 		}
 		r.serviceToNodeAddressMap[serviceKey][serviceInstanceKey] = node.Node.Address
-		r.serviceInstanceMap[serviceInstanceKey] = true
+		registration := svcRegistration{
+			id:      svc.ID,
+			proxy:   svc.Proxy,
+			connect: svc.Connect,
+		}
+		svcRegHash, err := hashstructure.Hash(registration, hashstructure.FormatV2, nil)
+		if err != nil {
+			r.Log.Error(err, "failed to hash service registration", "name", svc.Service)
+			return err
+		}
+		r.serviceInstanceMap[serviceInstanceKey] = svcRegHash
 	}
 	return nil
 }

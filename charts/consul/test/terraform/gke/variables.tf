@@ -1,3 +1,6 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
 variable "project" {
   description = <<EOF
 Google Cloud Project to launch resources in. This project must have GKE
@@ -19,10 +22,24 @@ variable "init_cli" {
 variable "cluster_count" {
   default     = 1
   description = "The number of Kubernetes clusters to create."
+
+  // We currently cannot support more than 2 cluster
+  // because setting up peering is more complicated if cluster count is
+  // more than two.
+  validation {
+    condition     = var.cluster_count < 3 && var.cluster_count > 0
+    error_message = "The cluster_count value must be 1 or 2."
+  }
 }
 
 variable "labels" {
-  type = map
-  default = {}
+  type        = map(any)
+  default     = {}
   description = "Labels to attach to the created resources."
+}
+
+variable "subnet" {
+  type        = string
+  default     = "default"
+  description = "Subnet to create the cluster in. Currently all clusters use the default subnet and we are running out of IPs"
 }

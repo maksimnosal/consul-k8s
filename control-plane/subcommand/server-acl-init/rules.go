@@ -212,6 +212,9 @@ func (c *Command) injectRules() (string, error) {
 {{- if .EnableNamespaces }}
 operator = "write"
 {{- end }}
+agent_prefix "" {
+  policy = "read"
+}
 node_prefix "" {
   policy = "write"
 }
