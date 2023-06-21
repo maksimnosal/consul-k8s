@@ -1,0 +1,61 @@
+*[main][~/Documents/github/hashicorp/consul-k8s]$ consul-k8s proxy read static-server-69875455d-zlt5d
+Envoy configuration for static-server-69875455d-zlt5d in namespace default:
+
+==> Clusters (4)
+Name                	FQDN                                                                          	Endpoints        	Type        	Last Updated
+consul-dataplane    	consul-dataplane                                                              	127.0.0.1:38153  	STATIC      	2023-06-21T23:37:24.706Z
+local_app           	local_app                                                                     	127.0.0.1:8080   	STATIC      	2023-06-21T23:37:25.028Z
+original-destination	original-destination                                                          	                 	ORIGINAL_DST	2023-06-21T23:37:25.042Z
+static-client       	static-client.default.dc1.internal.7a236d99-c5a6-0c82-cc63-2d5a896d0584.consul	10.244.0.11:20000	EDS         	2023-06-21T23:37:30.129Z
+
+
+==> Endpoints (3)
+Address:Port     	Cluster         	Weight	Status
+127.0.0.1:38153  	consul-dataplane	1.00  	HEALTHY
+127.0.0.1:8080   	local_app       	1.00  	HEALTHY
+10.244.0.11:20000	static-client   	1.00  	HEALTHY
+
+==> Listeners (4)
+Name             	Address:Port     	Direction	Filter Chain Match           	Filters              	Last Updated
+exposed_path_    	10.244.0.10:20300	INBOUND  	Any                          	HTTP: * -> local_app 	2023-06-21T23:37:25.050Z
+exposed_path_    	10.244.0.10:20500	INBOUND  	Any                          	HTTP: * -> local_app 	2023-06-21T23:37:25.052Z
+public_listener  	10.244.0.10:20000	INBOUND  	Any                          	RBAC:                	2023-06-21T23:37:25.053Z
+                 	                 	         	                             	TCP: -> local_app
+outbound_listener	127.0.0.1:15001  	OUTBOUND 	10.96.41.226/32, 240.0.0.2/32	TCP: -> static-client	2023-06-21T23:37:30.136Z
+
+==> Routes (2)
+Name                      	Destination Cluster	Last Updated
+exposed_path_filter__20500	local_app          	2023-06-21T23:37:25.051Z
+exposed_path_filter__20300	local_app          	2023-06-21T23:37:25.049Z
+
+==> Secrets (0)
+Name	Type	Last Updated
+
+*[main][~/Documents/github/hashicorp/consul-k8s]$ consul-k8s proxy read static-client-775994dc77-68nvp
+Envoy configuration for static-client-775994dc77-68nvp in namespace default:
+
+==> Clusters (4)
+Name                	FQDN                                                                          	Endpoints        	Type        	Last Updated
+consul-dataplane    	consul-dataplane                                                              	127.0.0.1:46403  	STATIC      	2023-06-21T23:37:45.628Z
+local_app           	local_app                                                                     	127.0.0.1:0      	STATIC      	2023-06-21T23:37:45.887Z
+original-destination	original-destination                                                          	                 	ORIGINAL_DST	2023-06-21T23:37:45.855Z
+static-server       	static-server.default.dc1.internal.7a236d99-c5a6-0c82-cc63-2d5a896d0584.consul	10.244.0.10:20000	EDS         	2023-06-21T23:37:45.879Z
+
+
+==> Endpoints (3)
+Address:Port     	Cluster         	Weight	Status
+127.0.0.1:46403  	consul-dataplane	1.00  	HEALTHY
+10.244.0.10:20000	static-server   	1.00  	HEALTHY
+127.0.0.1:0      	local_app       	1.00  	HEALTHY
+
+==> Listeners (2)
+Name             	Address:Port     	Direction	Filter Chain Match           	Filters              	Last Updated
+public_listener  	10.244.0.11:20000	INBOUND  	Any                          	RBAC:                	2023-06-21T23:37:45.896Z
+                 	                 	         	                             	TCP: -> local_app
+outbound_listener	127.0.0.1:15001  	OUTBOUND 	10.96.186.59/32, 240.0.0.1/32	TCP: -> static-server	2023-06-21T23:37:45.897Z
+
+==> Routes (0)
+Name	Destination Cluster	Last Updated
+
+==> Secrets (0)
+Name	Type	Last Updated
