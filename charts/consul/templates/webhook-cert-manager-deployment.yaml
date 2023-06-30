@@ -52,6 +52,9 @@ spec:
         image: {{ .Values.global.imageK8S }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: webhook-cert-manager
+        {{- if not .Values.global.openshift.enabled }}
+        {{- include "consul.securityContextTemplate" . | nindent 8 }}
+        {{- end }}
         resources:
           limits:
             cpu: 100m

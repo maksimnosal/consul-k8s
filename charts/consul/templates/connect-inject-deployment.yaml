@@ -89,6 +89,9 @@ spec:
       serviceAccountName: {{ template "consul.fullname" . }}-connect-injector
       containers:
         - name: sidecar-injector
+          {{- if not .Values.global.openshift.enabled }}
+          {{- include "consul.securityContextTemplate" . | nindent 10 }}
+          {{- end }}
           image: "{{ default .Values.global.imageK8S .Values.connectInject.image }}"
           ports:
             - containerPort: 8080

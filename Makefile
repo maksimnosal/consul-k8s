@@ -108,6 +108,7 @@ terraform-fmt:
 
 
 # ===========> CLI Targets
+GOPATH = $(shell go env GOPATH)
 cli-dev:
 	@echo "==> Installing consul-k8s CLI tool for ${GOOS}/${GOARCH}"
 	@cd cli; go build -o ./bin/consul-k8s; cp ./bin/consul-k8s ${GOPATH}/bin/

@@ -422,6 +422,17 @@ spec:
       serviceAccountName: prometheus-server
       containers:
         - name: prometheus-server-configmap-reload
+          {{- if not .Values.global.openshift.enabled }}
+          {{- if not .Values.global.enablePodSecurityPolicies }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          {{- end }}
+          {{- end }}
           image: "jimmidyson/configmap-reload:v0.4.0"
           imagePullPolicy: "IfNotPresent"
           args:
@@ -435,6 +446,17 @@ spec:
               readOnly: true
 
         - name: prometheus-server
+          {{- if not .Values.global.openshift.enabled }}
+          {{- if not .Values.global.enablePodSecurityPolicies }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          {{- end }}
+          {{- end }}
           image: "quay.io/prometheus/prometheus:v2.24.0"
           imagePullPolicy: "IfNotPresent"
           args:

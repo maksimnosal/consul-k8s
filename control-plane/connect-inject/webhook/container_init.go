@@ -223,41 +223,49 @@ func (w *MeshWebhook) containerInit(namespace corev1.Namespace, pod corev1.Pod, 
 			})
 	}
 
-	if tproxyEnabled {
-		if !w.EnableCNI {
-			// Set redirect traffic config for the container so that we can apply iptables rules.
-			redirectTrafficConfig, err := w.iptablesConfigJSON(pod, namespace)
-			if err != nil {
-				return corev1.Container{}, err
-			}
-			container.Env = append(container.Env,
-				corev1.EnvVar{
-					Name:  "CONSUL_REDIRECT_TRAFFIC_CONFIG",
-					Value: redirectTrafficConfig,
-				})
+	if tproxyEnabled && !w.EnableCNI {
+		// Set redirect traffic config for the container so that we can apply iptables rules.
+		redirectTrafficConfig, err := w.iptablesConfigJSON(pod, namespace)
+		if err != nil {
+			return corev1.Container{}, err
+		}
+		container.Env = append(container.Env,
+			corev1.EnvVar{
+				Name:  "CONSUL_REDIRECT_TRAFFIC_CONFIG",
+				Value: redirectTrafficConfig,
+			})
 
-			// Running consul connect redirect-traffic with iptables
-			// requires both being a root user and having NET_ADMIN capability.
-			container.SecurityContext = &corev1.SecurityContext{
-				RunAsUser:  pointer.Int64(rootUserAndGroupID),
-				RunAsGroup: pointer.Int64(rootUserAndGroupID),
-				// RunAsNonRoot overrides any setting in the Pod so that we can still run as root here as required.
-				RunAsNonRoot: pointer.Bool(false),
-				Privileged:   pointer.Bool(true),
-				Capabilities: &corev1.Capabilities{
-					Add: []corev1.Capability{netAdminCapability},
-				},
-			}
-		} else {
-			container.SecurityContext = &corev1.SecurityContext{
-				RunAsUser:    pointer.Int64(initContainersUserAndGroupID),
-				RunAsGroup:   pointer.Int64(initContainersUserAndGroupID),
-				RunAsNonRoot: pointer.Bool(true),
-				Privileged:   pointer.Bool(false),
-				Capabilities: &corev1.Capabilities{
-					Drop: []corev1.Capability{"ALL"},
-				},
-			}
+		// Running consul connect redirect-traffic with iptables
+		// requires both being a root user and having NET_ADMIN capability.
+		container.SecurityContext = &corev1.SecurityContext{
+			RunAsUser:  pointer.Int64(rootUserAndGroupID),
+			RunAsGroup: pointer.Int64(rootUserAndGroupID),
+			// RunAsNonRoot overrides any setting in the Pod so that we can still run as root here as required.
+			RunAsNonRoot:             pointer.Bool(false),
+			ReadOnlyRootFilesystem:   pointer.Bool(false),
+			AllowPrivilegeEscalation: pointer.Bool(true),
+			Privileged:               pointer.Bool(true),
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{netAdminCapability},
+			},
+			SeccompProfile: &corev1.SeccompProfile{
+				Type: corev1.SeccompProfileTypeRuntimeDefault,
+			},
+		}
+	} else if !w.EnableOpenShift {
+		container.SecurityContext = &corev1.SecurityContext{
+			RunAsUser:                pointer.Int64(initContainersUserAndGroupID),
+			RunAsGroup:               pointer.Int64(initContainersUserAndGroupID),
+			RunAsNonRoot:             pointer.Bool(true),
+			ReadOnlyRootFilesystem:   pointer.Bool(true),
+			AllowPrivilegeEscalation: pointer.Bool(false),
+			Privileged:               pointer.Bool(false),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+			SeccompProfile: &corev1.SeccompProfile{
+				Type: corev1.SeccompProfileTypeRuntimeDefault,
+			},
 		}
 	}
 

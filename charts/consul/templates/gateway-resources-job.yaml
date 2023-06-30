@@ -36,6 +36,9 @@ spec:
       serviceAccountName: {{ template "consul.fullname" . }}-gateway-resources
       containers:
         - name: gateway-resources
+          {{- if not .Values.global.openshift.enabled }}
+          {{ include "consul.securityContextTemplate" . | nindent 10 }}
+          {{- end }}
           image: {{ .Values.global.imageK8S }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           command:

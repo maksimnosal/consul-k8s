@@ -121,6 +121,9 @@ spec:
       {{- end }}
       containers:
       - name: server-acl-init-job
+        {{- if not .Values.global.openshift.enabled }}
+        {{- include "consul.securityContextTemplate" . | nindent 8 }}
+        {{- end }}
         image: {{ .Values.global.imageK8S }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         env:

@@ -32,10 +32,16 @@ spec:
   {{- end }}
   {{- if and .Values.global.tls.enabled .Values.global.tls.enableAutoEncrypt }}
   initContainers:
+  {{- if not .Values.global.openshift.enabled }}
+  {{ include "consul.securityContextTemplate" . | nindent 2 }}
+  {{- end }}
   {{- include "consul.getAutoEncryptClientCA" . | nindent 2 }}
   {{- end }}
   containers:
     - name: consul-test
+      {{- if not .Values.global.openshift.enabled }}
+      {{ include "consul.securityContextTemplate" . | nindent 2 }}
+      {{- end }}
       image: "{{ .Values.global.image }}"
       env:
         - name: HOST_IP

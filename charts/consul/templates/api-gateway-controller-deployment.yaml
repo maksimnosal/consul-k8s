@@ -56,6 +56,9 @@ spec:
       serviceAccountName: {{ template "consul.fullname" . }}-api-gateway-controller
       containers:
       - name: api-gateway-controller
+        {{- if not .Values.global.openshift.enabled }}
+        {{ include "consul.securityContextTemplate" . | nindent 8 }}
+        {{- end }}
         image: {{ .Values.apiGateway.image }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         ports:

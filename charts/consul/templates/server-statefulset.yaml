@@ -224,6 +224,9 @@ spec:
       {{- end }}
       initContainers:
       - name: locality-init
+        {{- if not .Values.global.openshift.enabled }}
+        {{- include "consul.securityContextTemplate" . | nindent 8 }}
+        {{- end }}
         image: {{ .Values.global.imageK8S }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         env:
@@ -528,14 +531,18 @@ spec:
             {{- end }}
           {{- end }}
           {{- if not .Values.global.openshift.enabled }}
-          securityContext:
-            {{- toYaml .Values.server.containerSecurityContext.server | nindent 12 }}
+          {{ include "consul.securityContextTemplate" . | nindent 10 }}
           {{- end }}
           {{- if .Values.server.extraContainers }}
           {{ toYaml .Values.server.extraContainers | nindent 8 }}
           {{- end }}
         {{- if .Values.server.snapshotAgent.enabled }}
         - name: consul-snapshot-agent
+          {{- if not .Values.global.openshift.enabled }}
+          {{ include "consul.securityContextTemplate" . | nindent 10 }}
+            fsGroup: 1000
+            runAsGroup: 1000
+          {{- end }}
           image: "{{ default .Values.global.image .Values.server.image }}"
           env:
             {{- if .Values.server.snapshotAgent.caCert }}

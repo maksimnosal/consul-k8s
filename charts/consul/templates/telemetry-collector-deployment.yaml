@@ -77,6 +77,9 @@ spec:
       # We're manually managing this init container instead of using the connect injector so that we don't run into
       # any race conditions on the connect-injector deployment or upgrade
       - name: consul-connect-init
+        {{- if not .Values.global.openshift.enabled }}
+        {{ include "consul.securityContextTemplate" . | nindent 8 }}
+        {{- end }}
         env:
           - name: POD_NAMESPACE
             valueFrom:
@@ -338,11 +341,22 @@ spec:
           tcpSocket:
             port: 20000
           timeoutSeconds: 1
+        {{/* TODO (pglass): unsure about this */}}
+        {{- if not .Values.global.openshift.enabled }}
+        {{- if not .Values.global.enablePodSecurityPolicies -}}
         securityContext:
           readOnlyRootFilesystem: true
           runAsGroup: 5995
           runAsNonRoot: true
           runAsUser: 5995
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          seccompProfile:
+            type: RuntimeDefault
+        {{- end }}
+        {{- end }}
         # dataplane volume mounts
         volumeMounts:
           - mountPath: /consul/connect-inject

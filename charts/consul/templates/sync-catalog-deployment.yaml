@@ -76,6 +76,9 @@ spec:
       {{- end }}
       containers:
       - name: sync-catalog
+        {{- if not .Values.global.openshift.enabled }}
+        {{ include "consul.securityContextTemplate" . | nindent 8 }}
+        {{- end }}
         image: "{{ default .Values.global.imageK8S .Values.syncCatalog.image }}"
         env:
         {{- include "consul.consulK8sConsulServerEnvVars" . | nindent 8 }}
