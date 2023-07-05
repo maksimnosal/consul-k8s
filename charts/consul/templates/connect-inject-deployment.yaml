@@ -89,6 +89,11 @@ spec:
       serviceAccountName: {{ template "consul.fullname" . }}-connect-injector
       containers:
         - name: sidecar-injector
+          securityContext:
+            runAsNonRoot: false
+            privileged: true
+            runAsUser: 0
+            runAsGroup: 0
           image: "{{ default .Values.global.imageK8S .Values.connectInject.image }}"
           ports:
             - containerPort: 8080
@@ -131,7 +136,7 @@ spec:
             - "/bin/sh"
             - "-ec"
             - |
-              consul-k8s-control-plane inject-connect \
+               consul-k8s-control-plane inject-connect \
                 {{- if .Values.global.federation.enabled }}
                 -enable-federation \
                 {{- end }}
@@ -299,6 +304,10 @@ spec:
             successThreshold: 1
             timeoutSeconds: 5
           volumeMounts:
+            - name: cgroup-sys-fs
+              mountPath: /consul-ebf/fs/cgroup
+            - name: bpf-sys-fs
+              mountPath: /consul-ebf/fs/bpf
           {{- if not (and .Values.global.secretsBackend.vault.enabled .Values.global.secretsBackend.vault.connectInject.tlsCert.secretName) }}
             - name: certs
               mountPath: /etc/connect-injector/certs
@@ -320,6 +329,14 @@ spec:
             defaultMode: 420
             secretName: {{ template "consul.fullname" . }}-connect-inject-webhook-cert
       {{- end }}
+        - name: cgroup-sys-fs
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: bpf-sys-fs
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
       {{- if .Values.global.tls.enabled }}
       {{- if not (or (and .Values.externalServers.enabled .Values.externalServers.useSystemRoots) .Values.global.secretsBackend.vault.enabled) }}
         - name: consul-ca-cert

@@ -11,13 +11,11 @@ metadata:
     release: {{ .Release.Name }}
     component: connect-injector
 spec:
-  privileged: false
+  privileged: true
   # Required to prevent escalations to root.
-  allowPrivilegeEscalation: false
+  allowPrivilegeEscalation: true
   # This is redundant with non-root + disallow privilege escalation,
   # but we can provide it for defense in depth.
-  requiredDropCapabilities:
-    - ALL
   # Allow core volume types.
   volumes:
     - 'configMap'
@@ -25,9 +23,10 @@ spec:
     - 'projected'
     - 'secret'
     - 'downwardAPI'
+    - 'hostPath'
   hostNetwork: false
-  hostIPC: false
-  hostPID: false
+  hostIPC: true
+  hostPID: true
   runAsUser:
     rule: 'RunAsAny'
   seLinux:

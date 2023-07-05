@@ -2,6 +2,7 @@ module github.com/hashicorp/consul-k8s/control-plane
 
 require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
+	github.com/cilium/ebpf v0.10.0
 	github.com/containernetworking/cni v1.1.1
 	github.com/deckarep/golang-set v1.7.1
 	github.com/fsnotify/fsnotify v1.6.0

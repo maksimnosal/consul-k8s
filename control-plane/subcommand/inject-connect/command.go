@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/hashicorp/consul-k8s/control-plane/ebpf"
 	"os"
 	"os/signal"
 	"strconv"
@@ -484,6 +485,13 @@ func (c *Command) Run(args []string) int {
 		setupLog.Error(err, "unable to create controller", "controller", endpoints.Controller{})
 		return 1
 	}
+
+	bfp := ebpf.New(ctrl.Log.WithName("ebpf"))
+	if err = bfp.LoadBpfProgram(); err != nil {
+		setupLog.Error(err, "unable to load ebpf program ", "error", err)
+		return 1
+	}
+	defer bfp.UnloadBpfProgram()
 
 	// API Gateway Controllers
 	if err := gatewaycontrollers.RegisterFieldIndexes(ctx, mgr); err != nil {
