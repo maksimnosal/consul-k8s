@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"strings"
 )
 
 //go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -Werror" bpf cgroup_connect4.c -- -I./headers
@@ -26,7 +27,8 @@ type BpfProgram struct {
 	serverIP string
 }
 
-func New(logger logr.Logger, serverIP string) *BpfProgram {
+func New(logger logr.Logger, serverAddr string) *BpfProgram {
+	serverIP := strings.SplitN(serverAddr, ":", 2)[0]
 	return &BpfProgram{logger: logger, serverIP: serverIP}
 }
 
@@ -78,13 +80,12 @@ func (p *BpfProgram) LoadBpfProgram() error {
 	p.logger.Info("eBPF Attach successfully loaded ", "info", info)
 	const vipAddr = "169.0.0.1"
 	fakeVIP := net.ParseIP(vipAddr)
+	p.logger.Info("Loading with  %s  %s", "key addr", vipAddr,
+		"server addr", p.serverIP)
 
 	fakeServiceKey := binary.LittleEndian.Uint32(fakeVIP.To4())
 
 	fakeBackendIP := binary.LittleEndian.Uint32(net.ParseIP(p.serverIP).To4())
-
-	p.logger.Info("Loading with  %s  %s", "key addr", vipAddr,
-		"server addr", p.serverIP)
 
 	p.logger.Info("Loading with (int) %s  %s", "key addr", fakeBackendIP,
 		"server addr", fakeServiceKey)
