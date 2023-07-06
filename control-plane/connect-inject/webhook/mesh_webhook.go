@@ -211,6 +211,7 @@ type MeshWebhook struct {
 	decoder *admission.Decoder
 	// etcResolvFile is only used in tests to stub out /etc/resolv.conf file.
 	etcResolvFile string
+	Injector      bpfInjector
 }
 type multiPortInfo struct {
 	serviceIndex int
@@ -306,7 +307,7 @@ func (w *MeshWebhook) Handle(ctx context.Context, req admission.Request) admissi
 		pod.Spec.InitContainers = append(pod.Spec.InitContainers, initContainer)
 
 		// Add the Envoy sidecar.
-		envoySidecar, err := w.consulDataplaneSidecar(*ns, pod, multiPortInfo{})
+		envoySidecar, err := w.consulDataplaneSidecar(*ns, pod, multiPortInfo{}, w.Injector)
 		if err != nil {
 			w.Log.Error(err, "error configuring injection sidecar container", "request name", req.Name)
 			return admission.Errored(http.StatusInternalServerError, fmt.Errorf("error configuring injection sidecar container: %s", err))
@@ -377,7 +378,7 @@ func (w *MeshWebhook) Handle(ctx context.Context, req admission.Request) admissi
 			pod.Spec.InitContainers = append(pod.Spec.InitContainers, initContainer)
 
 			// Add the Envoy sidecar.
-			envoySidecar, err := w.consulDataplaneSidecar(*ns, pod, mpi)
+			envoySidecar, err := w.consulDataplaneSidecar(*ns, pod, mpi, w.Injector)
 			if err != nil {
 				w.Log.Error(err, "error configuring injection sidecar container", "request name", req.Name)
 				return admission.Errored(http.StatusInternalServerError, fmt.Errorf("error configuring injection sidecar container: %s", err))

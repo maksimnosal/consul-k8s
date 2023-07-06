@@ -4,15 +4,18 @@
 package ebpf
 
 import (
+	"context"
 	"encoding/binary"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/go-logr/logr"
-	"log"
+	"github.com/hashicorp/consul-server-connection-manager/discovery"
+	"math"
 	"net"
 	"os"
 	"path"
 	"strings"
+	"time"
 )
 
 //go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -Werror" bpf cgroup_connect4.c -- -I./headers
@@ -21,15 +24,30 @@ const bpfFSPath = " /consul-ebf/fs/bpf"
 const sysGroupFSPath = "/consul-ebf/fs/cgroup"
 
 type BpfProgram struct {
-	objs     bpfObjects
-	logger   logr.Logger
-	l        link.Link
-	serverIP string
+	objs       bpfObjects
+	logger     logr.Logger
+	l          link.Link
+	ch         chan string
+	discoverer discovery.Discoverer
+	serversMap map[string]int
+	cancel     context.CancelFunc
 }
 
-func New(logger logr.Logger, serverAddr string) *BpfProgram {
-	serverIP := strings.SplitN(serverAddr, ":", 2)[0]
-	return &BpfProgram{logger: logger, serverIP: serverIP}
+func New(logger logr.Logger, discoverer discovery.Discoverer) (*BpfProgram, error) {
+	serversMap := make(map[string]int)
+
+	bpfProgram := BpfProgram{logger: logger, discoverer: discoverer, serversMap: serversMap}
+	bpfProgram.ch = make(chan string)
+	err := bpfProgram.initServers()
+	if err != nil {
+		logger.Error(err, "init servers failed")
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go bpfProgram.run(ctx)
+	bpfProgram.cancel = cancel
+	return &bpfProgram, nil
+
 }
 
 func (p *BpfProgram) LoadBpfProgram() error {
@@ -78,23 +96,32 @@ func (p *BpfProgram) LoadBpfProgram() error {
 	}
 
 	p.logger.Info("eBPF Attach successfully loaded ", "info", info)
-	const vipAddr = "169.0.0.1"
-	fakeVIP := net.ParseIP(vipAddr)
-	p.logger.Info("Loading with  %s  %s", "key addr", vipAddr,
-		"server addr", p.serverIP)
-
-	fakeServiceKey := binary.LittleEndian.Uint32(fakeVIP.To4())
-
-	fakeBackendIP := binary.LittleEndian.Uint32(net.ParseIP(p.serverIP).To4())
-
-	p.logger.Info("Loading with (int) %s  %s", "key addr", fakeBackendIP,
-		"server addr", fakeServiceKey)
-
-	if err := p.objs.V4SvcMap.Update(fakeServiceKey, bpfConsulServers{fakeBackendIP}, ebpf.UpdateAny); err != nil {
-		log.Fatalf("Failed Loading a fake service: %v", err)
-	}
 
 	return nil
+}
+
+func (p *BpfProgram) run(ctx context.Context) {
+
+	tick := time.NewTicker(time.Minute)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+			p.logger.Info("Time to rebalance servers")
+		case ip := <-p.ch:
+			err := p.inject(ip)
+			if err != nil {
+				p.logger.Error(err, "not able to inject IP")
+			}
+		}
+
+	}
+}
+
+func (p *BpfProgram) Inject(ip string) {
+	p.logger.Info("injecting IP")
+	p.ch <- ip
 }
 
 func (p *BpfProgram) UnloadBpfProgram() error {
@@ -103,5 +130,57 @@ func (p *BpfProgram) UnloadBpfProgram() error {
 	if err != nil {
 		return err
 	}
+	p.cancel()
 	return p.l.Close()
+}
+
+func (p *BpfProgram) getServer() string {
+	minV := math.MaxInt
+	minK := ""
+	for k, v := range p.serversMap {
+		if v < minV {
+			minV = v
+			minK = k
+		}
+	}
+	return minK
+}
+
+func (p *BpfProgram) initServers() error {
+	addrs, err := p.discoverer.Discover(context.Background())
+	if err != nil {
+		return err
+	}
+
+	for _, a := range addrs {
+		ip := strings.SplitN(a.String(), ":", 2)[0]
+		p.serversMap[ip] = 0
+	}
+	return nil
+}
+
+func (p *BpfProgram) inject(ip string) error {
+
+	fakeVIP := net.ParseIP(ip)
+
+	serverIP := p.getServer()
+	defer func() {
+		p.serversMap[serverIP]++
+	}()
+
+	p.logger.Info("Loading with", "key addr", ip,
+		"server addr", serverIP)
+
+	fakeServiceKey := binary.LittleEndian.Uint32(fakeVIP.To4())
+
+	fakeBackendIP := binary.LittleEndian.Uint32(net.ParseIP(serverIP).To4())
+
+	p.logger.Info("Loading with (int)", "key addr", fakeBackendIP,
+		"server addr", fakeServiceKey)
+
+	if err := p.objs.V4SvcMap.Update(fakeServiceKey, bpfConsulServers{fakeBackendIP}, ebpf.UpdateAny); err != nil {
+		p.logger.Error(err, "Failed Loading a fake service")
+		return err
+	}
+	return nil
 }

@@ -67,7 +67,7 @@ func (w *MeshWebhook) configureDNS(pod *corev1.Pod, k8sNS string) error {
 
 		// Replace release namespace in the searches with the pod namespace.
 		// This is so that the searches we generate will be for the pod's namespace
-		// instead of the namespace of the connect-injector. E.g. instead of
+		// instead of the namespace of the connect-Injector. E.g. instead of
 		// consul.svc.cluster.local it should be <pod ns>.svc.cluster.local.
 		var searches []string
 		// Kubernetes will add a search domain for <namespace>.svc.cluster.local so we can always

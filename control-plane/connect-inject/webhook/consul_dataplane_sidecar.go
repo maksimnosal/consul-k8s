@@ -6,6 +6,7 @@ package webhook
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -23,7 +24,11 @@ const (
 	consulDataplaneDNSBindPort = 8600
 )
 
-func (w *MeshWebhook) consulDataplaneSidecar(namespace corev1.Namespace, pod corev1.Pod, mpi multiPortInfo) (corev1.Container, error) {
+type bpfInjector interface {
+	Inject(ip string)
+}
+
+func (w *MeshWebhook) consulDataplaneSidecar(namespace corev1.Namespace, pod corev1.Pod, mpi multiPortInfo, injector bpfInjector) (corev1.Container, error) {
 	resources, err := w.sidecarResources(pod)
 	if err != nil {
 		return corev1.Container{}, err
@@ -40,7 +45,7 @@ func (w *MeshWebhook) consulDataplaneSidecar(namespace corev1.Namespace, pod cor
 	}
 
 	multiPort := mpi.serviceName != ""
-	args, err := w.getContainerSidecarArgs(namespace, mpi, bearerTokenFile, pod)
+	args, err := w.getContainerSidecarArgs(namespace, mpi, bearerTokenFile, pod, injector)
 	if err != nil {
 		return corev1.Container{}, err
 	}
@@ -173,7 +178,7 @@ func (w *MeshWebhook) consulDataplaneSidecar(namespace corev1.Namespace, pod cor
 	return container, nil
 }
 
-func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi multiPortInfo, bearerTokenFile string, pod corev1.Pod) ([]string, error) {
+func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi multiPortInfo, bearerTokenFile string, pod corev1.Pod, injector bpfInjector) ([]string, error) {
 	proxyIDFileName := "/consul/connect-inject/proxyid"
 	if mpi.serviceName != "" {
 		proxyIDFileName = fmt.Sprintf("/consul/connect-inject/proxyid-%s", mpi.serviceName)
@@ -361,7 +366,15 @@ func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi mu
 		args = append(args, "-consul-dns-bind-port="+strconv.Itoa(consulDataplaneDNSBindPort))
 	}
 
-	args = append(args, "-envoy-xds-address=169.0.0.1")
+	ip, err := addIP("169.0.0.1", mpi.serviceIndex)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, fmt.Sprintf("-envoy-xds-address=%s:8502", ip))
+
+	if injector != nil {
+		injector.Inject(ip)
+	}
 
 	var envoyExtraArgs []string
 	extraArgs, annotationSet := pod.Annotations[constants.AnnotationEnvoyExtraArgs]
@@ -398,6 +411,28 @@ func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi mu
 		args = append(args, envoyExtraArgs...)
 	}
 	return args, nil
+}
+
+func nextIP(addr string) (string, error) {
+	ip := net.ParseIP(addr)
+	ip = ip.To4()
+	if ip == nil {
+		return "", fmt.Errorf("invalid addr: %s", addr)
+	}
+	ip = ip.Mask(ip.DefaultMask())
+	ip[3]++
+	return ip.String(), nil
+}
+func addIP(addr string, add int) (string, error) {
+	ip := addr
+	var err error
+	for i := 0; i < add; i++ {
+		ip, err = nextIP(ip)
+		if err != nil {
+			return "", err
+		}
+	}
+	return ip, nil
 }
 
 func (w *MeshWebhook) sidecarResources(pod corev1.Pod) (corev1.ResourceRequirements, error) {

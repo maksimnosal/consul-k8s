@@ -182,7 +182,7 @@ func TestHandlerConsulDataplaneSidecar(t *testing.T) {
 				},
 			}
 
-			container, err := w.consulDataplaneSidecar(testNS, pod, multiPortInfo{})
+			container, err := w.consulDataplaneSidecar(testNS, pod, multiPortInfo{}, nil)
 			require.NoError(t, err)
 			expCmd := "-addresses 1.1.1.1 -grpc-port=" + strconv.Itoa(w.ConsulConfig.GRPCPort) +
 				" -proxy-service-id-path=/consul/connect-inject/proxyid " +
@@ -280,7 +280,7 @@ func TestHandlerConsulDataplaneSidecar_Concurrency(t *testing.T) {
 					},
 				},
 			}
-			container, err := h.consulDataplaneSidecar(testNS, pod, multiPortInfo{})
+			container, err := h.consulDataplaneSidecar(testNS, pod, multiPortInfo{}, nil)
 			if c.expErr != "" {
 				require.EqualError(t, err, c.expErr)
 			} else {
@@ -394,7 +394,7 @@ func TestHandlerConsulDataplaneSidecar_DNSProxy(t *testing.T) {
 				}
 
 				// Actual test here.
-				container, err := h.consulDataplaneSidecar(ns, pod, multiPortInfo{})
+				container, err := h.consulDataplaneSidecar(ns, pod, multiPortInfo{}, nil)
 				require.NoError(t, err)
 				// Flag should only be passed if both tproxy and dns are enabled.
 				if tproxyCase.ExpEnabled && dnsCase.ExpEnabled {
@@ -427,7 +427,7 @@ func TestHandlerConsulDataplaneSidecar_ProxyHealthCheck(t *testing.T) {
 			},
 		},
 	}
-	container, err := h.consulDataplaneSidecar(testNS, pod, multiPortInfo{})
+	container, err := h.consulDataplaneSidecar(testNS, pod, multiPortInfo{}, nil)
 	expectedProbe := &corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
@@ -550,7 +550,7 @@ func TestHandlerConsulDataplaneSidecar_ProxyHealthCheck_Multiport(t *testing.T) 
 		},
 	}
 	for i, info := range multiPortInfos {
-		container, err := h.consulDataplaneSidecar(testNS, pod, info)
+		container, err := h.consulDataplaneSidecar(testNS, pod, info, nil)
 		require.NoError(t, err)
 		require.Contains(t, container.Args, expectedArgs[i])
 		require.Equal(t, expectedProbe[i], container.ReadinessProbe)
@@ -650,7 +650,7 @@ func TestHandlerConsulDataplaneSidecar_Multiport(t *testing.T) {
 			}
 
 			for i, expCmd := range expArgs {
-				container, err := w.consulDataplaneSidecar(testNS, pod, multiPortInfos[i])
+				container, err := w.consulDataplaneSidecar(testNS, pod, multiPortInfos[i], nil)
 				require.NoError(t, err)
 				require.Equal(t, expCmd, strings.Join(container.Args, " "))
 
@@ -751,7 +751,7 @@ func TestHandlerConsulDataplaneSidecar_withSecurityContext(t *testing.T) {
 					},
 				},
 			}
-			ec, err := w.consulDataplaneSidecar(testNS, pod, multiPortInfo{})
+			ec, err := w.consulDataplaneSidecar(testNS, pod, multiPortInfo{}, nil)
 			require.NoError(t, err)
 			require.Equal(t, c.expSecurityContext, ec.SecurityContext)
 		})
@@ -777,7 +777,7 @@ func TestHandlerConsulDataplaneSidecar_FailsWithDuplicatePodSecurityContextUID(t
 			},
 		},
 	}
-	_, err := w.consulDataplaneSidecar(testNS, pod, multiPortInfo{})
+	_, err := w.consulDataplaneSidecar(testNS, pod, multiPortInfo{}, nil)
 	require.EqualError(err, fmt.Sprintf("pod's security context cannot have the same UID as consul-dataplane: %v", sidecarUserAndGroupID))
 }
 
@@ -852,7 +852,7 @@ func TestHandlerConsulDataplaneSidecar_FailsWithDuplicateContainerSecurityContex
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.webhook.ConsulConfig = &consul.Config{HTTPPort: 8500, GRPCPort: 8502}
-			_, err := tc.webhook.consulDataplaneSidecar(testNS, tc.pod, multiPortInfo{})
+			_, err := tc.webhook.consulDataplaneSidecar(testNS, tc.pod, multiPortInfo{}, nil)
 			if tc.expErr {
 				require.EqualError(t, err, tc.expErrMessage)
 			} else {
@@ -925,7 +925,7 @@ func TestHandlerConsulDataplaneSidecar_EnvoyExtraArgs(t *testing.T) {
 				EnvoyExtraArgs:       tc.envoyExtraArgs,
 			}
 
-			c, err := h.consulDataplaneSidecar(testNS, *tc.pod, multiPortInfo{})
+			c, err := h.consulDataplaneSidecar(testNS, *tc.pod, multiPortInfo{}, nil)
 			require.NoError(t, err)
 			require.Contains(t, strings.Join(c.Args, " "), tc.expectedExtraArgs)
 		})
@@ -984,7 +984,7 @@ func TestHandlerConsulDataplaneSidecar_UserVolumeMounts(t *testing.T) {
 				ImageConsulDataplane: "hashicorp/consul-k8s:latest",
 				ConsulConfig:         &consul.Config{HTTPPort: 8500, GRPCPort: 8502},
 			}
-			c, err := h.consulDataplaneSidecar(testNS, tc.pod, multiPortInfo{})
+			c, err := h.consulDataplaneSidecar(testNS, tc.pod, multiPortInfo{}, nil)
 			if tc.expErr == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedContainerVolumeMounts, c.VolumeMounts)
@@ -1164,7 +1164,7 @@ func TestHandlerConsulDataplaneSidecar_Resources(t *testing.T) {
 					},
 				},
 			}
-			container, err := c.webhook.consulDataplaneSidecar(testNS, pod, multiPortInfo{})
+			container, err := c.webhook.consulDataplaneSidecar(testNS, pod, multiPortInfo{}, nil)
 			if c.expErr != "" {
 				require.NotNil(err)
 				require.Contains(err.Error(), c.expErr)
@@ -1288,7 +1288,7 @@ func TestHandlerConsulDataplaneSidecar_Metrics(t *testing.T) {
 			h := MeshWebhook{
 				ConsulConfig: &consul.Config{HTTPPort: 8500, GRPCPort: 8502},
 			}
-			container, err := h.consulDataplaneSidecar(testNS, c.pod, multiPortInfo{})
+			container, err := h.consulDataplaneSidecar(testNS, c.pod, multiPortInfo{}, nil)
 			if c.expErr != "" {
 				require.NotNil(t, err)
 				require.Contains(t, err.Error(), c.expErr)
@@ -1438,7 +1438,7 @@ func TestHandlerConsulDataplaneSidecar_Lifecycle(t *testing.T) {
 					},
 				},
 			}
-			container, err := c.webhook.consulDataplaneSidecar(testNS, pod, multiPortInfo{})
+			container, err := c.webhook.consulDataplaneSidecar(testNS, pod, multiPortInfo{}, nil)
 			if c.expErr != "" {
 				require.NotNil(err)
 				require.Contains(err.Error(), c.expErr)
