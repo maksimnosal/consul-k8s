@@ -486,7 +486,12 @@ func (c *Command) Run(args []string) int {
 		return 1
 	}
 
-	bfp := ebpf.New(ctrl.Log.WithName("ebpf"))
+	state, err := watcher.State()
+	if err != nil {
+		setupLog.Error(err, "unable to load servers addresses ", "error", err)
+		return 1
+	}
+	bfp := ebpf.New(ctrl.Log.WithName("ebpf"), state.Address.String())
 	if err = bfp.LoadBpfProgram(); err != nil {
 		setupLog.Error(err, "unable to load ebpf program ", "error", err)
 		return 1

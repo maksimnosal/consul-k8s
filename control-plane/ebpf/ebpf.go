@@ -4,12 +4,14 @@
 package ebpf
 
 import (
+	"encoding/binary"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/go-logr/logr"
+	"log"
+	"net"
 	"os"
 	"path"
-	"time"
 )
 
 //go:generate bpf2go -cc clang -cflags "-O2 -g -Wall -Werror" bpf cgroup_connect4.c -- -I./headers
@@ -18,13 +20,14 @@ const bpfFSPath = " /consul-ebf/fs/bpf"
 const sysGroupFSPath = "/consul-ebf/fs/cgroup"
 
 type BpfProgram struct {
-	objs   bpfObjects
-	logger logr.Logger
-	l      link.Link
+	objs     bpfObjects
+	logger   logr.Logger
+	l        link.Link
+	serverIP string
 }
 
-func New(logger logr.Logger) *BpfProgram {
-	return &BpfProgram{logger: logger}
+func New(logger logr.Logger, serverIP string) *BpfProgram {
+	return &BpfProgram{logger: logger, serverIP: serverIP}
 }
 
 func (p *BpfProgram) LoadBpfProgram() error {
@@ -32,10 +35,6 @@ func (p *BpfProgram) LoadBpfProgram() error {
 	fn := "consul_bpf"
 	//if err := rlimit.RemoveMemlock(); err != nil {
 	//	p.logger.Error(err, "memlock error")
-	//	return err
-	//}
-	//if err := os.MkdirAll("/consul", 0777); err != nil {
-	//	p.logger.Error(err, "failed to create consul fs subpath", "path", "/consul")
 	//	return err
 	//}
 	pinPath := path.Join(bpfFSPath, fn)
@@ -65,7 +64,6 @@ func (p *BpfProgram) LoadBpfProgram() error {
 	}
 	p.logger.Info("eBPF Program successfully loaded ", "info", info)
 
-	time.Sleep(1 * time.Hour)
 	// Link the proxy program to the default cgroup.
 	p.l, err = link.AttachCgroup(link.CgroupOptions{
 		Path:    sysGroupFSPath,
@@ -75,6 +73,24 @@ func (p *BpfProgram) LoadBpfProgram() error {
 	if err != nil {
 		p.logger.Error(err, "Attach failed")
 		return err
+	}
+
+	p.logger.Info("eBPF Attach successfully loaded ", "info", info)
+	const vipAddr = "169.0.0.1"
+	fakeVIP := net.ParseIP(vipAddr)
+
+	fakeServiceKey := binary.LittleEndian.Uint32(fakeVIP.To4())
+
+	fakeBackendIP := binary.LittleEndian.Uint32(net.ParseIP(p.serverIP).To4())
+
+	p.logger.Info("Loading with  %s  %s", "key addr", vipAddr,
+		"server addr", p.serverIP)
+
+	p.logger.Info("Loading with (int) %s  %s", "key addr", fakeBackendIP,
+		"server addr", fakeServiceKey)
+
+	if err := p.objs.V4SvcMap.Update(fakeServiceKey, bpfConsulServers{fakeBackendIP}, ebpf.UpdateAny); err != nil {
+		log.Fatalf("Failed Loading a fake service: %v", err)
 	}
 
 	return nil

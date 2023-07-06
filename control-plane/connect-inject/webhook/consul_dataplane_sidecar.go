@@ -361,6 +361,8 @@ func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi mu
 		args = append(args, "-consul-dns-bind-port="+strconv.Itoa(consulDataplaneDNSBindPort))
 	}
 
+	args = append(args, "-envoy-xds-address=169.0.0.1")
+
 	var envoyExtraArgs []string
 	extraArgs, annotationSet := pod.Annotations[constants.AnnotationEnvoyExtraArgs]
 	// --base-id is an envoy arg rather than consul-dataplane, and so we need to make sure we're passing it
