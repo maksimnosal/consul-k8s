@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/google/shlex"
 	"github.com/hashicorp/consul-k8s/control-plane/connect-inject/common"
@@ -27,6 +28,8 @@ const (
 type bpfInjector interface {
 	Inject(ip string)
 }
+
+var counter atomic.Int64
 
 func (w *MeshWebhook) consulDataplaneSidecar(namespace corev1.Namespace, pod corev1.Pod, mpi multiPortInfo, injector bpfInjector) (corev1.Container, error) {
 	resources, err := w.sidecarResources(pod)
@@ -366,10 +369,12 @@ func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi mu
 		args = append(args, "-consul-dns-bind-port="+strconv.Itoa(consulDataplaneDNSBindPort))
 	}
 
-	ip, err := addIP("169.0.0.1", mpi.serviceIndex)
+	add := counter.Add(1)
+	ip, err := nextIP("169.0.0.1", add)
 	if err != nil {
 		return nil, err
 	}
+	w.Log.Info("injecting IP", "ip", ip, "add", add)
 	args = append(args, fmt.Sprintf("-envoy-xds-address=%s:8502", ip))
 
 	if injector != nil {
@@ -413,26 +418,15 @@ func (w *MeshWebhook) getContainerSidecarArgs(namespace corev1.Namespace, mpi mu
 	return args, nil
 }
 
-func nextIP(addr string) (string, error) {
+func nextIP(addr string, add int64) (string, error) {
 	ip := net.ParseIP(addr)
 	ip = ip.To4()
 	if ip == nil {
 		return "", fmt.Errorf("invalid addr: %s", addr)
 	}
 	ip = ip.Mask(ip.DefaultMask())
-	ip[3]++
+	ip[3] += byte(add)
 	return ip.String(), nil
-}
-func addIP(addr string, add int) (string, error) {
-	ip := addr
-	var err error
-	for i := 0; i < add; i++ {
-		ip, err = nextIP(ip)
-		if err != nil {
-			return "", err
-		}
-	}
-	return ip, nil
 }
 
 func (w *MeshWebhook) sidecarResources(pod corev1.Pod) (corev1.ResourceRequirements, error) {
