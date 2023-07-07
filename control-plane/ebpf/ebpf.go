@@ -238,6 +238,67 @@ func (p *BpfProgram) reconcile() error {
 			p.logger.Info("transferring success", "oldserver", k, "newserver", newserver)
 		}
 	}
-
+	average := averageSize(p.serverKeys)
+	p.logger.Info("rebalance", "average", average)
+	if average <= 0 {
+		return nil
+	}
+	max := maxLen(p.serverKeys)
+	min := minLen(p.serverKeys)
+	if max-min >= 2 {
+		p.logger.Info("transferring vips (rebalance)", "max", max, "min", min, "average", average)
+		list := make([]uint32, 0)
+		for k, v := range p.serverKeys {
+			list = append(list, v...)
+			p.serverKeys[k] = make([]uint32, 0)
+		}
+		for _, v := range list {
+			server := p.getServer()
+			p.logger.Info("updating to", "key", v, "server", server)
+			if err := p.objs.V4SvcMap.Update(v, bpfConsulServers{ipToInt(server)}, ebpf.UpdateAny); err != nil {
+				p.logger.Error(err, "Failed Loading a vip")
+				return err
+			}
+			p.serverKeys[server] = append(p.serverKeys[server], v)
+		}
+	}
+	p.logger.Info("final servers", "servers", p.serverKeys)
 	return nil
+}
+
+func averageSize(m map[string][]uint32) int {
+	if len(m) <= 0 {
+		return 0
+	}
+	sum := 0
+	for _, v := range m {
+		sum += len(v)
+	}
+	return int(math.Ceil(float64(sum) / float64(len(m))))
+}
+
+func maxLen(m map[string][]uint32) int {
+	if len(m) <= 0 {
+		return 0
+	}
+	max := 0
+	for _, v := range m {
+		if max < len(v) {
+			max = len(v)
+		}
+	}
+	return max
+}
+
+func minLen(m map[string][]uint32) int {
+	if len(m) <= 0 {
+		return 0
+	}
+	min := math.MaxInt
+	for _, v := range m {
+		if min > len(v) {
+			min = len(v)
+		}
+	}
+	return min
 }
