@@ -31,6 +31,7 @@ type BpfProgram struct {
 	discoverer discovery.Discoverer
 	serversMap map[string]int
 	cancel     context.CancelFunc
+	serverKeys map[string][]uint32
 }
 
 func New(logger logr.Logger, discoverer discovery.Discoverer) (*BpfProgram, error) {
@@ -38,6 +39,7 @@ func New(logger logr.Logger, discoverer discovery.Discoverer) (*BpfProgram, erro
 
 	bpfProgram := BpfProgram{logger: logger, discoverer: discoverer, serversMap: serversMap}
 	bpfProgram.ch = make(chan string)
+	bpfProgram.serverKeys = make(map[string][]uint32, 0)
 	err := bpfProgram.initServers()
 	if err != nil {
 		logger.Error(err, "init servers failed")
@@ -102,13 +104,17 @@ func (p *BpfProgram) LoadBpfProgram() error {
 
 func (p *BpfProgram) run(ctx context.Context) {
 
-	tick := time.NewTicker(time.Minute)
+	tick := time.NewTicker(5 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
 			p.logger.Info("Time to rebalance servers")
+			err := p.reconcile()
+			if err != nil {
+				p.logger.Error(err, "not able to reconcile")
+			}
 		case ip := <-p.ch:
 			err := p.inject(ip)
 			if err != nil {
@@ -137,9 +143,9 @@ func (p *BpfProgram) UnloadBpfProgram() error {
 func (p *BpfProgram) getServer() string {
 	minV := math.MaxInt
 	minK := ""
-	for k, v := range p.serversMap {
-		if v < minV {
-			minV = v
+	for k, v := range p.serverKeys {
+		if minV > len(v) {
+			minV = len(v)
 			minK = k
 		}
 	}
@@ -159,9 +165,11 @@ func (p *BpfProgram) initServers() error {
 	return nil
 }
 
-func (p *BpfProgram) inject(ip string) error {
+func ipToInt(ip string) uint32 {
+	return binary.LittleEndian.Uint32(net.ParseIP(ip).To4())
+}
 
-	fakeVIP := net.ParseIP(ip)
+func (p *BpfProgram) inject(ip string) error {
 
 	serverIP := p.getServer()
 	defer func() {
@@ -171,9 +179,9 @@ func (p *BpfProgram) inject(ip string) error {
 	p.logger.Info("Loading with", "key addr", ip,
 		"server addr", serverIP)
 
-	fakeServiceKey := binary.LittleEndian.Uint32(fakeVIP.To4())
+	fakeServiceKey := ipToInt(ip)
 
-	fakeBackendIP := binary.LittleEndian.Uint32(net.ParseIP(serverIP).To4())
+	fakeBackendIP := ipToInt(serverIP)
 
 	p.logger.Info("Loading with (int)", "key addr", fakeBackendIP,
 		"server addr", fakeServiceKey)
@@ -182,5 +190,54 @@ func (p *BpfProgram) inject(ip string) error {
 		p.logger.Error(err, "Failed Loading a fake service")
 		return err
 	}
+	if _, ok := p.serverKeys[serverIP]; !ok {
+		p.serverKeys[serverIP] = make([]uint32, 0)
+	}
+	p.serverKeys[serverIP] = append(p.serverKeys[serverIP], fakeServiceKey)
+
+	return nil
+}
+
+func findAddrs(addr []discovery.Addr, ip string) bool {
+	for _, a := range addr {
+		if a.IP.String() == ip {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *BpfProgram) reconcile() error {
+	addrs, err := p.discoverer.Discover(context.Background())
+	p.logger.Info("got following servers", "servers", addrs, "keys", p.serverKeys)
+	if err != nil {
+		return err
+	}
+
+	//add missing servers
+	for _, a := range addrs {
+		if _, ok := p.serverKeys[a.IP.String()]; !ok {
+			p.serverKeys[a.IP.String()] = make([]uint32, 0)
+			p.logger.Info("got new server1", "server", a.IP.String())
+		}
+	}
+
+	// remove old servers
+	for k, keys := range p.serverKeys {
+		if !findAddrs(addrs, k) {
+			delete(p.serverKeys, k)
+			newserver := p.getServer()
+			p.logger.Info("transferring vips", "oldserver", k, "newserver", newserver)
+			for _, vip := range keys {
+				if err := p.objs.V4SvcMap.Update(vip, bpfConsulServers{ipToInt(newserver)}, ebpf.UpdateAny); err != nil {
+					p.logger.Error(err, "Failed Loading a vip")
+					return err
+				}
+			}
+			p.serverKeys[newserver] = append(p.serverKeys[newserver], keys...)
+			p.logger.Info("transferring success", "oldserver", k, "newserver", newserver)
+		}
+	}
+
 	return nil
 }
