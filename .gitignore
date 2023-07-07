@@ -10,3 +10,5 @@ pkg/
 .idea/
 .vscode
 .bob/
+/control-plane/ebpf/bpf_bpfeb.*
+/control-plane/ebpf/bpf_bpfel.*
