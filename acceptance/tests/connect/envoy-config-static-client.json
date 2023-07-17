@@ -1,0 +1,85 @@
+{
+  "admin": {
+    "access_log_path": "/dev/null",
+    "address": {
+      "socket_address": {
+        "address": "127.0.0.1",
+        "port_value": 19000
+      }
+    }
+  },
+  "node": {
+    "cluster": "static-client",
+    "id": "static-client-775994dc77-d8zfc-static-client-sidecar-proxy",
+    "metadata": {
+      "node_name": "dc1-control-plane-virtual",
+      "namespace": "default",
+      "partition": "default"
+    }
+  },
+  "layered_runtime": {
+    "layers": [
+      {
+        "name": "base",
+        "static_layer": {
+          "re2.max_program_size.error_level": 1048576
+        }
+      }
+    ]
+  },
+  "static_resources": {
+    "clusters": [
+      {
+        "name": "consul-dataplane",
+        "ignore_health_on_host_removal": false,
+        "connect_timeout": "1s",
+        "type": "STATIC",
+        "http2_protocol_options": {},
+        "loadAssignment": {
+          "clusterName": "consul-dataplane",
+          "endpoints": [
+            {
+              "lbEndpoints": [
+                {
+                  "endpoint": {
+                    "address": {
+                      "socket_address": {
+                        "address": "127.0.0.1",
+                        "port_value": 42513
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "dynamic_resources": {
+    "lds_config": {
+      "ads": {},
+      "resource_api_version": "V3"
+    },
+    "cds_config": {
+      "ads": {},
+      "resource_api_version": "V3"
+    },
+    "ads_config": {
+      "api_type": "DELTA_GRPC",
+      "transport_api_version": "V3",
+      "grpc_services": {
+        "initial_metadata": [
+          {
+            "key": "x-consul-token",
+            "value": ""
+          }
+        ],
+        "envoy_grpc": {
+          "cluster_name": "consul-dataplane"
+        }
+      }
+    }
+  }
+}

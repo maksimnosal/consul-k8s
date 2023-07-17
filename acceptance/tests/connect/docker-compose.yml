@@ -1,0 +1,16 @@
+services:
+  static-server-sidecar:
+    image: "serversidecar"
+    ports:
+      - 20000:20000
+  static-server:
+    platform: linux/arm64/v8
+    image: "ealen/echo-server:latest"
+    environment:
+      PORT: 8080
+    ports:
+      - 8080:8080
+#  static-client:
+#    image: "clientsidecar"
+#    ports:
+#      - "20000:20000"

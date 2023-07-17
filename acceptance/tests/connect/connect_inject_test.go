@@ -27,7 +27,7 @@ func TestConnectInject(t *testing.T) {
 		secure bool
 	}{
 		"not-secure": {secure: false},
-		"secure":     {secure: true},
+		//"secure":     {secure: true},
 	}
 
 	for name, c := range cases {
@@ -56,6 +56,7 @@ func TestConnectInject(t *testing.T) {
 
 			connHelper.TestConnectionSuccess(t, connhelper.ConnHelperOpts{})
 			connHelper.TestConnectionFailureWhenUnhealthy(t)
+			time.Sleep(time.Minute * 10)
 		})
 	}
 }

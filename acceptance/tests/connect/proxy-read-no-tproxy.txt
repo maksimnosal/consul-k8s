@@ -14,8 +14,7 @@ Address:Port   	Cluster         	Weight	Status
 
 ==> Listeners (1)
 Name           	Address:Port     	Direction	Filter Chain Match	Filters          	Last Updated
-public_listener	10.244.0.32:20000	INBOUND  	Any               	RBAC:            	2023-06-21T23:23:14.820Z
-               	                 	         	                  	TCP: -> local_app
+public_listener	10.244.0.32:20000	INBOUND  	Any               	RBAC:            	2023-06-21T23:23:14.820Z            	                 	         	                  	TCP: -> local_app
 
 ==> Routes (0)
 Name	Destination Cluster	Last Updated
@@ -24,6 +23,7 @@ Name	Destination Cluster	Last Updated
 Name	Type	Last Updated
 
 
+=====================================================================================================
 *[main][~/Documents/github/hashicorp/consul-k8s]$ consul-k8s proxy read static-client-79779b7d9-dt78g
 Envoy configuration for static-client-79779b7d9-dt78g in namespace default:
 
