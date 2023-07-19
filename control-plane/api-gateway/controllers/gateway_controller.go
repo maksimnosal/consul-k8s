@@ -154,6 +154,18 @@ func (r *GatewayController) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	//get all custom httprouteFilters referencing these routes
+	filterMap := map[types.NamespacedName]gwv1beta1.HTTPRouteFilter{}
+	for _, h := range httpRoutes {
+		filters, err := r.getFiltersForHTTPRoute(ctx, req.NamespacedName, resources)
+		if err != nil {
+			log.Error(err, "unable to list HTTPRoutes")
+			return ctrl.Result{}, err
+		}
+		filterMap[h.NamespacedName()]
+
+	}
+
 	// get all tcp routes referencing this gateway
 	tcpRoutes, err := r.getRelatedTCPRoutes(ctx, req.NamespacedName, resources)
 	if err != nil {
