@@ -1,0 +1,20 @@
+# permissions for end users to view httptrafficfilters.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: httptrafficfilter-viewer-role
+rules:
+- apiGroups:
+  - consul.hashicorp.com
+  resources:
+  - httptrafficfilters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - consul.hashicorp.com
+  resources:
+  - httptrafficfilters/status
+  verbs:
+  - get

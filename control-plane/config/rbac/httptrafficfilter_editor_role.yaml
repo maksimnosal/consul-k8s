@@ -1,0 +1,24 @@
+# permissions for end users to edit httptrafficfilters.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: httptrafficfilter-editor-role
+rules:
+- apiGroups:
+  - consul.hashicorp.com
+  resources:
+  - httptrafficfilters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - consul.hashicorp.com
+  resources:
+  - httptrafficfilters/status
+  verbs:
+  - get
