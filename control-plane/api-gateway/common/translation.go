@@ -115,7 +115,7 @@ func (t ResourceTranslator) toAPIGatewayListener(gateway gwv1beta1.Gateway, list
 	}, true
 }
 
-func (t ResourceTranslator) ToHTTPRoute(route gwv1beta1.HTTPRoute, resources *ResourceMap) *api.HTTPRouteConfigEntry {
+func (t ResourceTranslator) ToHTTPRoute(route gwv1beta1.HTTPRoute, externalFilters []v1alpha1.HTTPTrafficFilter, resources *ResourceMap) *api.HTTPRouteConfigEntry {
 	namespace := t.Namespace(route.Namespace)
 
 	// we don't translate parent refs
@@ -125,7 +125,7 @@ func (t ResourceTranslator) ToHTTPRoute(route gwv1beta1.HTTPRoute, resources *Re
 		return t.translateHTTPRouteRule(route, rule, resources)
 	})
 
-	return &api.HTTPRouteConfigEntry{
+	configEntry := api.HTTPRouteConfigEntry{
 		Kind:      api.HTTPRoute,
 		Name:      route.Name,
 		Namespace: namespace,
@@ -137,6 +137,20 @@ func (t ResourceTranslator) ToHTTPRoute(route gwv1beta1.HTTPRoute, resources *Re
 		Hostnames: hostnames,
 		Rules:     rules,
 	}
+
+	for _, filter := range externalFilters {
+		//this would be easier if we could gurantee only one filter per HTTPRoute but this depends on what jeff wants
+
+		//TODO update consul httproute config entry to match
+
+		//TODO if there are multiple HTTPRouteFilters we would need to do some kind of type check to figure out what
+		//to do here, but since in this POC there is only the one we can do this
+
+		//and I /think/ thats all we would need to do here
+		configEntry.NumRetries = filter.Spec.NumRetries
+	}
+
+	return &configEntry
 }
 
 func (t ResourceTranslator) translateHTTPRouteRule(route gwv1beta1.HTTPRoute, rule gwv1beta1.HTTPRouteRule, resources *ResourceMap) (api.HTTPRouteRule, bool) {

@@ -154,18 +154,15 @@ func (r *GatewayController) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	////get all custom httprouteFilters referencing these routes
-	//filterMap := map[types.NamespacedName][]gwv1beta1.HTTPRouteFilter{}
-	//for _, h := range httpRoutes {
-	//	filters, err := r.getFiltersForHTTPRoute(ctx, req.NamespacedName, resources)
-	//	if err != nil {
-	//		log.Error(err, "unable to list HTTPRoutes")
-	//		return ctrl.Result{}, err
-	//	}
-	//
-	//	namespacedName := getHTTPRouteNamespaceName(h)
-	//	filterMap[namespacedName] := append(filterMap[namespacedName], filters...)
-	//}
+	//get all custom httprouteFilters referencing these routes
+	for _, h := range httpRoutes {
+		//the filters get set onto the httproute set object as part of the fetch so I'm not sure if we need them
+		_, err := r.getExternalFiltersForHTTPRoute(ctx, h, resources)
+		if err != nil {
+			log.Error(err, "unable to list HTTPRoute ExternalFilters")
+			return ctrl.Result{}, err
+		}
+	}
 
 	// get all tcp routes referencing this gateway
 	tcpRoutes, err := r.getRelatedTCPRoutes(ctx, req.NamespacedName, resources)
@@ -802,22 +799,21 @@ func (c *GatewayController) getRelatedHTTPRoutes(ctx context.Context, gateway ty
 	return list.Items, nil
 }
 
-//func (c *GatewayController) getFiltersForHTTPRoute(ctx context.Context, route types.NamespacedName, resources *common.ResourceMap) ([]gwv1beta1.HTTPRoute, error) {
-//	//var list HTTPRouteFilterList
-//	//
-//	//if err := c.Client.List(ctx, &list, &client.ListOptions{
-//	//	FieldSelector: fields.OneTermEqualSelector(HTTPRoute_GatewayIndex, route.String()),
-//	//}); err != nil {
-//	//	return nil, err
-//	//}
-//	//
-//	//for _, route := range list.Items {
-//	//	resources.ReferenceCountHTTPRoute(route)
-//	//}
-//	//
-//	//return list.Items, nil
-//	return
-//}
+func (c *GatewayController) getExternalFiltersForHTTPRoute(ctx context.Context, route gwv1beta1.HTTPRoute, resources *common.ResourceMap) ([]v1alpha1.HTTPTrafficFilter, error) {
+	var list v1alpha1.HTTPTrafficFilterList
+
+	if err := c.Client.List(ctx, &list, &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector(HTTPRoute_GatewayIndex, getHTTPRouteNamespaceName(route).String()),
+	}); err != nil {
+		return nil, err
+	}
+
+	for _, filter := range list.Items {
+		resources.ReferenceCountHTTPRouteFilter(route, filter)
+	}
+
+	return list.Items, nil
+}
 
 func (c *GatewayController) getRelatedTCPRoutes(ctx context.Context, gateway types.NamespacedName, resources *common.ResourceMap) ([]gwv1alpha2.TCPRoute, error) {
 	var list gwv1alpha2.TCPRouteList

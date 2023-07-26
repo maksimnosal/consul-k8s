@@ -72,8 +72,9 @@ type certificate struct {
 }
 
 type httpRoute struct {
-	route    gwv1beta1.HTTPRoute
-	gateways mapset.Set
+	route           gwv1beta1.HTTPRoute
+	gateways        mapset.Set
+	externalFilters mapset.Set
 }
 
 type tcpRoute struct {
@@ -364,6 +365,23 @@ func (s *ResourceMap) ReferenceCountHTTPRoute(route gwv1beta1.HTTPRoute) {
 	s.httpRouteGateways[consulKey] = set
 }
 
+func (s *ResourceMap) ReferenceCountHTTPRouteFilter(route gwv1beta1.HTTPRoute, filter v1alpha1.HTTPTrafficFilter) {
+	key := client.ObjectKeyFromObject(&route)
+	consulKey := NormalizeMeta(s.toConsulReference(api.HTTPRoute, key))
+
+	//TODO since this is a piece of the bigger route I'm not sure if we'd need to do anymore than this
+
+	set := s.httpRouteGateways[consulKey]
+	if set.externalFilters == nil {
+		//initialize
+		set.externalFilters = mapset.NewSet()
+	} else {
+		set.externalFilters.Add(filter)
+	}
+
+	s.httpRouteGateways[consulKey] = set
+}
+
 func (s *ResourceMap) ReferenceCountTCPRoute(route gwv1alpha2.TCPRoute) {
 	key := client.ObjectKeyFromObject(&route)
 	consulKey := NormalizeMeta(s.toConsulReference(api.TCPRoute, key))
@@ -408,7 +426,12 @@ func (s *ResourceMap) TranslateAndMutateHTTPRoute(key types.NamespacedName, onUp
 		return
 	}
 
-	translated := s.translator.ToHTTPRoute(route.route, s)
+	//get httpFilter list from set
+	filters := []v1alpha1.HTTPTrafficFilter{}
+	for _, f := range route.externalFilters.ToSlice() {
+		filters = append(filters, f.(v1alpha1.HTTPTrafficFilter))
+	}
+	translated := s.translator.ToHTTPRoute(route.route, filters, s)
 
 	consulRoute, ok := s.consulHTTPRoutes[consulKey]
 	if ok {

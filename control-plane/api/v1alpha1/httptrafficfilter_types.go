@@ -8,6 +8,10 @@ func init() {
 	SchemeBuilder.Register(&HTTPTrafficFilter{}, &HTTPTrafficFilterList{})
 }
 
+//TODO if we end up doing it this way, we would probably want an interface representing all of our filter types
+
+//If we just have one filter with all of our settings this would be easier and we could enforce just one filter
+
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
