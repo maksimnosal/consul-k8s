@@ -266,7 +266,9 @@ func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddress
 func (r *EndpointsController) reconcileAddress(ctx context.Context, addressHealth addressHealth, endpointPods mapset.Set, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
 	var errs error
 	if addressHealth.address.TargetRef != nil && addressHealth.address.TargetRef.Kind == "Pod" {
+		r.stateMutex.Lock()
 		endpointPods.Add(addressHealth.address.TargetRef.Name)
+		r.stateMutex.Unlock()
 		if err := r.registerServicesAndHealthCheck(ctx, serviceEndpoints, addressHealth, endpointAddressMap, nodeAddressMap); err != nil {
 			r.Log.Error(err, "failed to register services or health check", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
 			errs = multierror.Append(errs, err)
