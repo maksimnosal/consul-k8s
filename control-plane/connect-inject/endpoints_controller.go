@@ -212,7 +212,9 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 		errs = multierror.Append(errs, err)
 	}
 
-	r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] = nodeAddressMap
+	if errs == nil {
+		r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] = nodeAddressMap
+	}
 
 	return ctrl.Result{}, errs
 }
