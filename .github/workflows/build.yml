@@ -9,6 +9,7 @@ on:
       # Push events on main branch
       - main
       - aahel/new-test-fix
+      - releng/fix
       # Push events to branches matching refs/heads/release/**
       - "release/**"
 
@@ -308,7 +309,7 @@ jobs:
           - { goos: "windows", goarch: "amd64", fips: ".fips1402" }
     name: Docker ${{ matrix.goarch }} ${{ matrix.fips }} default release build
     needs: [get-product-version, build-windows]
-    runs-on: windows-2019
+    runs-on: ubuntu-latest
     env:
       repo: ${{ github.event.repository.name }}
       version: ${{ needs.get-product-version.outputs.product-version }}${{ matrix.fips }}
