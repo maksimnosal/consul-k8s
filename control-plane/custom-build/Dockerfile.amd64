@@ -1,0 +1,2 @@
+FROM hashicorp/consul-k8s-control-plane:0.34.1
+COPY amd64.bin /bin/consul-k8s-control-plane

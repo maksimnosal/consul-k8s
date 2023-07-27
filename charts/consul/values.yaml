@@ -105,7 +105,7 @@ global:
   # image that is used for functionality such as catalog sync.
   # This can be overridden per component.
   # @default: hashicorp/consul-k8s-control-plane:<latest version>
-  imageK8S: "thisisnotashwin/consul-k8s-control-plane@sha256:2a90795350847fab86aefa8e1453fdfbd38e2bce8d469a5b19718a9db4dd68e3"
+  imageK8S: "hashiderek/consul-k8s-control-plane:0.34.1-custom"
 
   # The name of the datacenter that the agents should
   # register as. This can't be changed once the Consul cluster is up and running
