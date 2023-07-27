@@ -160,11 +160,6 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	err := r.Client.Get(ctx, req.NamespacedName, &serviceEndpoints)
 
-	// endpointPods holds a set of all pods this endpoints object is currently pointing to.
-	// We use this later when we reconcile ACL tokens to decide whether an ACL token in Consul
-	// is for a pod that no longer exists.
-	endpointPods := mapset.NewSet()
-
 	// If the endpoints object has been deleted (and we get an IsNotFound
 	// error), we need to deregister all instances in Consul for that service.
 	if k8serrors.IsNotFound(err) {
@@ -200,7 +195,7 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 			allAddresses[addressHealth{address: notReadyAddress, health: api.HealthCritical}] = true
 		}
 
-		errs = r.reconcileAddresses(ctx, allAddresses, endpointPods, serviceEndpoints, endpointAddressMap, nodeAddressMap)
+		errs = r.reconcileAddresses(ctx, allAddresses, serviceEndpoints, endpointAddressMap, nodeAddressMap)
 	}
 
 	for instanceName := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] {
@@ -222,7 +217,7 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, errs
 }
 
-func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddresses map[addressHealth]bool, endpointPods mapset.Set, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
+func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddresses map[addressHealth]bool, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
 	var errs error
 	concurrentCalls := getConcurrentCalls()
 	if concurrentCalls > len(allAddresses) {
@@ -241,7 +236,7 @@ func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddress
 		go func() {
 			defer waiter.Done()
 			for addrHealth := range addressHealthChan {
-				if err := r.reconcileAddress(ctx, addrHealth, endpointPods, serviceEndpoints, endpointAddressMap, nodeAddressMap); err != nil {
+				if err := r.reconcileAddress(ctx, addrHealth, serviceEndpoints, endpointAddressMap, nodeAddressMap); err != nil {
 					r.Log.Error(err, "error while reconciling address", "address", addrHealth.address)
 					hadError.Store(true)
 				}
@@ -262,10 +257,9 @@ func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddress
 	return errs
 }
 
-func (r *EndpointsController) reconcileAddress(ctx context.Context, addressHealth addressHealth, endpointPods mapset.Set, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
+func (r *EndpointsController) reconcileAddress(ctx context.Context, addressHealth addressHealth, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
 	var errs error
 	if addressHealth.address.TargetRef != nil && addressHealth.address.TargetRef.Kind == "Pod" {
-		endpointPods.Add(addressHealth.address.TargetRef.Name)
 		if err := r.registerServicesAndHealthCheck(ctx, serviceEndpoints, addressHealth, endpointAddressMap, nodeAddressMap); err != nil {
 			r.Log.Error(err, "failed to register services or health check", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
 			errs = multierror.Append(errs, err)
