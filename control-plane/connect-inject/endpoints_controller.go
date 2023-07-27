@@ -1275,8 +1275,6 @@ func (r *EndpointsController) consulNamespace(namespace string) string {
 }
 
 func (r *EndpointsController) populateServiceToNodeMap(agent corev1.Pod, consulNS string) error {
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
 	consulClient, err := r.remoteConsulClient(agent.Status.HostIP, consulNS)
 	if err != nil {
 		return err
@@ -1295,6 +1293,8 @@ func (r *EndpointsController) populateServiceToNodeMap(agent corev1.Pod, consulN
 		return err
 	}
 
+	r.nodeMapMutex.Lock()
+	defer r.nodeMapMutex.Unlock()
 	for _, svc := range svcs {
 		serviceKey := fmt.Sprintf("%s/%s", svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyKubeServiceName])
 		serviceInstanceKey := fmt.Sprintf("%s/%s", svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyPodName])
