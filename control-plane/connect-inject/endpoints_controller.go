@@ -123,7 +123,7 @@ type EndpointsController struct {
 	Scheme *runtime.Scheme
 	context.Context
 
-	nodeMapMutex            sync.Mutex
+	stateMutex              sync.Mutex
 	serviceToNodeAddressMap map[string]map[string]string
 	serviceInstanceMap      map[string]uint64
 	serviceCheckHealth      map[string]string
@@ -297,12 +297,11 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 	}
 	podHostIP := pod.Status.HostIP
 
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
-
 	if hasBeenInjected(pod) {
 		// Build the endpointAddressMap up for deregistering service instances later.
+		r.stateMutex.Lock()
 		endpointAddressMap[pod.Status.PodIP] = true
+		r.stateMutex.Unlock()
 		// Create client for Consul agent local to the pod.
 		client, err := r.remoteConsulClient(podHostIP, r.consulNamespace(pod.Namespace))
 		if err != nil {
@@ -315,7 +314,9 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 			managedByEndpointsController = true
 		}
 		if managedByEndpointsController {
+			r.stateMutex.Lock()
 			nodeAddressMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = podHostIP
+			r.stateMutex.Unlock()
 		}
 		// Get information from the pod to create service instance registrations.
 		serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
@@ -334,11 +335,10 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 			return err
 		}
 		// For pods managed by this controller, create and register the service instance.
-		if hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]; (!ok || hash != svcRegHash) && managedByEndpointsController {
-			if r.serviceInstanceMap == nil {
-				r.serviceInstanceMap = map[string]uint64{}
-			}
-
+		r.stateMutex.Lock()
+		hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]
+		r.stateMutex.Unlock()
+		if (!ok || hash != svcRegHash) && managedByEndpointsController {
 			// Register the service instance with the local agent.
 			// Note: the order of how we register services is important,
 			// and the connect-proxy service should come after the "main" service
@@ -359,7 +359,9 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 				return err
 			}
 
+			r.stateMutex.Lock()
 			r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = svcRegHash
+			r.stateMutex.Unlock()
 		}
 
 		// Update the service TTL health check for both legacy services and services managed by endpoints
@@ -372,18 +374,25 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 		serviceID := getServiceID(pod, serviceEndpoints)
 		healthCheckID := getConsulHealthCheckID(pod, serviceID)
 
-		if forceHealthChecks || (addressHealth.health != r.serviceCheckHealth[healthCheckID]) {
+		r.stateMutex.Lock()
+		oldHealth := r.serviceCheckHealth[healthCheckID]
+		r.stateMutex.Unlock()
+		if forceHealthChecks || (addressHealth.health != oldHealth) {
 			r.Log.Info("updating health check status for service",
 				"serviceID", serviceID, "reason", reason,
 				"status", addressHealth.health, "oldStatus", r.serviceCheckHealth[healthCheckID])
 			err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
 			if err != nil {
+				r.stateMutex.Lock()
 				delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
 				delete(r.serviceCheckHealth, healthCheckID)
+				r.stateMutex.Unlock()
 				r.Log.Error(err, "failed to update health check status for service", "name", serviceName)
 				return err
 			}
+			r.stateMutex.Lock()
 			r.serviceCheckHealth[healthCheckID] = addressHealth.health
+			r.stateMutex.Unlock()
 		}
 	}
 
@@ -904,9 +913,9 @@ func deleteService(r *EndpointsController, nodeAddress string, agentAddresses ma
 			return err
 		}
 
-		r.nodeMapMutex.Lock()
+		r.stateMutex.Lock()
 		delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", k8sSvcNamespace, svc.Meta[MetaKeyPodName]))
-		r.nodeMapMutex.Unlock()
+		r.stateMutex.Unlock()
 
 		if r.AuthMethod != "" {
 			r.Log.Info("reconciling ACL tokens for service", "svc", svc.Service)
@@ -1269,8 +1278,8 @@ func (r *EndpointsController) populateServiceToNodeMap(agent corev1.Pod, consulN
 		return err
 	}
 
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
+	r.stateMutex.Lock()
+	defer r.stateMutex.Unlock()
 	for _, svc := range svcs {
 		serviceKey := fmt.Sprintf("%s/%s", svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyKubeServiceName])
 		serviceInstanceKey := fmt.Sprintf("%s/%s", svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyPodName])
