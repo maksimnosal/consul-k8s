@@ -62,6 +62,8 @@ const (
 	exposedPathsStartupPortsRangeStart = 20500
 )
 
+var forceHealthChecks = os.Getenv("CONSUL_FORCE_UPDATE_HEALTH") == "TRUE"
+
 type EndpointsController struct {
 	client.Client
 	// ConsulClient points at the agent local to the connect-inject deployment pod.
@@ -124,6 +126,7 @@ type EndpointsController struct {
 	nodeMapMutex            sync.Mutex
 	serviceToNodeAddressMap map[string]map[string]string
 	serviceInstanceMap      map[string]uint64
+	serviceCheckHealth      map[string]string
 }
 
 type addressHealth struct {
@@ -143,6 +146,10 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	if shouldIgnore(req.Namespace, r.DenyK8sNamespacesSet, r.AllowK8sNamespacesSet) {
 		return ctrl.Result{}, nil
+	}
+
+	if r.serviceCheckHealth == nil {
+		r.serviceCheckHealth = make(map[string]string)
 	}
 
 	if r.serviceToNodeAddressMap == nil || len(r.serviceToNodeAddressMap) == 0 {
@@ -375,14 +382,21 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 		// registration.
 		reason := getHealthCheckStatusReason(addressHealth.health, pod.Name, pod.Namespace)
 		serviceName := getServiceName(pod, serviceEndpoints)
-		r.Log.Info("updating health check status for service", "name", serviceName, "reason", reason, "status", addressHealth.health)
 		serviceID := getServiceID(pod, serviceEndpoints)
 		healthCheckID := getConsulHealthCheckID(pod, serviceID)
-		err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
-		if err != nil {
-			delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
-			r.Log.Error(err, "failed to update health check status for service", "name", serviceName)
-			return err
+
+		if forceHealthChecks || (addressHealth.health != r.serviceCheckHealth[healthCheckID]) {
+			r.Log.Info("updating health check status for service",
+				"serviceID", serviceID, "reason", reason,
+				"status", addressHealth.health, "oldStatus", r.serviceCheckHealth[healthCheckID])
+			err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
+			if err != nil {
+				delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+				delete(r.serviceCheckHealth, healthCheckID)
+				r.Log.Error(err, "failed to update health check status for service", "name", serviceName)
+				return err
+			}
+			r.serviceCheckHealth[healthCheckID] = addressHealth.health
 		}
 	}
 
