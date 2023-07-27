@@ -226,14 +226,8 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddresses map[addressHealth]bool, endpointPods mapset.Set, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
-	var concurrentCalls = 30
 	var errs error
-
-	if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
-		if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
-			concurrentCalls = i
-		}
-	}
+	concurrentCalls := getConcurrentCalls()
 	if concurrentCalls > len(allAddresses) {
 		concurrentCalls = len(allAddresses)
 	}
@@ -810,12 +804,7 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 
 	if endpointsAddressesMap == nil {
 		// Control the number of concurrent calls that can be made to agents
-		var concurrentCalls = 30
-		if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
-			if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
-				concurrentCalls = i
-			}
-		}
+		concurrentCalls := getConcurrentCalls()
 		if concurrentCalls > len(r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)]) {
 			concurrentCalls = len(r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)])
 		}
@@ -957,12 +946,7 @@ func (r *EndpointsController) setupNodeToServiceMap(ctx context.Context, req ctr
 	r.serviceToNodeAddressMap = map[string]map[string]string{}
 	r.serviceInstanceMap = map[string]uint64{}
 	// Control the number of concurrent calls that can be made to agents
-	var concurrentCalls = 30
-	if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
-		if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
-			concurrentCalls = i
-		}
-	}
+	concurrentCalls := getConcurrentCalls()
 	if concurrentCalls > len(agents.Items) {
 		concurrentCalls = len(agents.Items)
 	}
@@ -1325,4 +1309,14 @@ func hasBeenInjected(pod corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+func getConcurrentCalls() int {
+	var concurrentCalls = 30
+	if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
+		if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
+			concurrentCalls = i
+		}
+	}
+	return concurrentCalls
 }
