@@ -123,7 +123,7 @@ type EndpointsController struct {
 	Scheme *runtime.Scheme
 	context.Context
 
-	nodeMapMutex            sync.Mutex
+	stateMutex              sync.Mutex
 	serviceToNodeAddressMap map[string]map[string]string
 	serviceInstanceMap      map[string]uint64
 	serviceCheckHealth      map[string]string
@@ -203,12 +203,10 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 		errs = r.reconcileAddresses(ctx, allAddresses, endpointPods, serviceEndpoints, endpointAddressMap, nodeAddressMap)
 	}
 
-	for instanceName := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] {
+	serviceName := fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)
+	for instanceName := range r.serviceToNodeAddressMap[serviceName] {
 		if _, ok := nodeAddressMap[instanceName]; !ok {
-			if deletedAddressMap == nil {
-				deletedAddressMap = map[string]bool{}
-			}
-			deletedAddressMap[r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)][instanceName]] = true
+			deletedAddressMap[r.serviceToNodeAddressMap[serviceName][instanceName]] = true
 		}
 	}
 
@@ -220,20 +218,14 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 		errs = multierror.Append(errs, err)
 	}
 
-	r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] = nodeAddressMap
+	r.serviceToNodeAddressMap[serviceName] = nodeAddressMap
 
 	return ctrl.Result{}, errs
 }
 
 func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddresses map[addressHealth]bool, endpointPods mapset.Set, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
-	var concurrentCalls = 30
 	var errs error
-
-	if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
-		if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
-			concurrentCalls = i
-		}
-	}
+	var concurrentCalls = getConcurrentCalls()
 	if concurrentCalls > len(allAddresses) {
 		concurrentCalls = len(allAddresses)
 	}
@@ -309,13 +301,13 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 		return err
 	}
 	podHostIP := pod.Status.HostIP
-
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
+	podId := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
 
 	if hasBeenInjected(pod) {
 		// Build the endpointAddressMap up for deregistering service instances later.
+		r.stateMutex.Lock()
 		endpointAddressMap[pod.Status.PodIP] = true
+		r.stateMutex.Unlock()
 		// Create client for Consul agent local to the pod.
 		client, err := r.remoteConsulClient(podHostIP, r.consulNamespace(pod.Namespace))
 		if err != nil {
@@ -328,7 +320,9 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 			managedByEndpointsController = true
 		}
 		if managedByEndpointsController {
-			nodeAddressMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = podHostIP
+			r.stateMutex.Lock()
+			nodeAddressMap[podId] = podHostIP
+			r.stateMutex.Unlock()
 		}
 		// Get information from the pod to create service instance registrations.
 		serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
@@ -347,11 +341,10 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 			return err
 		}
 		// For pods managed by this controller, create and register the service instance.
-		if hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]; (!ok || hash != svcRegHash) && managedByEndpointsController {
-			if r.serviceInstanceMap == nil {
-				r.serviceInstanceMap = map[string]uint64{}
-			}
-
+		r.stateMutex.Lock()
+		hash, ok := r.serviceInstanceMap[podId]
+		r.stateMutex.Unlock()
+		if (!ok || hash != svcRegHash) && managedByEndpointsController {
 			// Register the service instance with the local agent.
 			// Note: the order of how we register services is important,
 			// and the connect-proxy service should come after the "main" service
@@ -372,7 +365,9 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 				return err
 			}
 
-			r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = svcRegHash
+			r.stateMutex.Lock()
+			r.serviceInstanceMap[podId] = svcRegHash
+			r.stateMutex.Unlock()
 		}
 
 		// Update the service TTL health check for both legacy services and services managed by endpoints
@@ -385,18 +380,25 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 		serviceID := getServiceID(pod, serviceEndpoints)
 		healthCheckID := getConsulHealthCheckID(pod, serviceID)
 
-		if forceHealthChecks || (addressHealth.health != r.serviceCheckHealth[healthCheckID]) {
+		r.stateMutex.Lock()
+		oldHealth := r.serviceCheckHealth[healthCheckID]
+		r.stateMutex.Unlock()
+		if forceHealthChecks || (addressHealth.health != oldHealth) {
 			r.Log.Info("updating health check status for service",
 				"serviceID", serviceID, "reason", reason,
-				"status", addressHealth.health, "oldStatus", r.serviceCheckHealth[healthCheckID])
+				"status", addressHealth.health, "oldStatus", oldHealth)
 			err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
 			if err != nil {
-				delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+				r.stateMutex.Lock()
+				delete(r.serviceInstanceMap, podId)
 				delete(r.serviceCheckHealth, healthCheckID)
+				r.stateMutex.Unlock()
 				r.Log.Error(err, "failed to update health check status for service", "name", serviceName)
 				return err
 			}
+			r.stateMutex.Lock()
 			r.serviceCheckHealth[healthCheckID] = addressHealth.health
+			r.stateMutex.Unlock()
 		}
 	}
 
@@ -810,20 +812,21 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 
 	if endpointsAddressesMap == nil {
 		// Control the number of concurrent calls that can be made to agents
-		var concurrentCalls = 30
-		if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
-			if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
-				concurrentCalls = i
-			}
-		}
-		if concurrentCalls > len(r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)]) {
-			concurrentCalls = len(r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)])
+		var concurrentCalls = getConcurrentCalls()
+		serviceName := fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)
+		if concurrentCalls > len(r.serviceToNodeAddressMap[serviceName]) {
+			concurrentCalls = len(r.serviceToNodeAddressMap[serviceName])
 		}
 
 		// Wait for all items to complete before returning to preserve the original flow of data.
 		r.Log.Info("Queuing up deregisterServiceOnAgents", "tasks", len(agents.Items), "goroutines", concurrentCalls)
 		var waiter sync.WaitGroup
 		waiter.Add(concurrentCalls)
+
+		nodes := map[string]bool{}
+		for _, nodeAddress := range r.serviceToNodeAddressMap[serviceName] {
+			nodes[nodeAddress] = true
+		}
 
 		// Queue the agent calls
 		var hadError atomic.Bool
@@ -839,11 +842,8 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 				}
 			}()
 		}
-		nodes := map[string]bool{}
-		for _, nodeAddress := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)] {
-			nodes[nodeAddress] = true
-		}
 
+		// Feed the input data to the concurrent processes.
 		for nodeAddress := range nodes {
 			nodeChan <- nodeAddress
 		}
@@ -856,6 +856,7 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 			return fmt.Errorf("some deregisterServiceOnAgents tasks were not successful")
 		}
 	} else {
+		// TODO make this concurrent?
 		for nodeAddress := range deletedAddressMap {
 			if _, ok := agentAddresses[nodeAddress]; !ok {
 				continue
@@ -915,8 +916,6 @@ func deleteService(r *EndpointsController, nodeAddress string, agentAddresses ma
 		r.Log.Error(err, "failed to get service instances", "name", k8sSvcName)
 		return err
 	}
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
 	for svcID, svc := range svcs {
 		var serviceDeregistered bool
 		r.Log.Info("deregistering service from consul", "svc", svcID)
@@ -924,7 +923,11 @@ func deleteService(r *EndpointsController, nodeAddress string, agentAddresses ma
 			r.Log.Error(err, "failed to deregister service instance", "id", svcID)
 			return err
 		}
+
+		r.stateMutex.Lock()
 		delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", k8sSvcNamespace, svc.Meta[MetaKeyPodName]))
+		r.stateMutex.Unlock()
+
 		serviceDeregistered = true
 
 		if r.AuthMethod != "" && serviceDeregistered {
@@ -957,12 +960,7 @@ func (r *EndpointsController) setupNodeToServiceMap(ctx context.Context, req ctr
 	r.serviceToNodeAddressMap = map[string]map[string]string{}
 	r.serviceInstanceMap = map[string]uint64{}
 	// Control the number of concurrent calls that can be made to agents
-	var concurrentCalls = 30
-	if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
-		if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
-			concurrentCalls = i
-		}
-	}
+	var concurrentCalls = getConcurrentCalls()
 	if concurrentCalls > len(agents.Items) {
 		concurrentCalls = len(agents.Items)
 	}
@@ -1275,8 +1273,6 @@ func (r *EndpointsController) consulNamespace(namespace string) string {
 }
 
 func (r *EndpointsController) populateServiceToNodeMap(agent corev1.Pod, consulNS string) error {
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
 	consulClient, err := r.remoteConsulClient(agent.Status.HostIP, consulNS)
 	if err != nil {
 		return err
@@ -1298,10 +1294,14 @@ func (r *EndpointsController) populateServiceToNodeMap(agent corev1.Pod, consulN
 	for _, svc := range svcs {
 		serviceKey := fmt.Sprintf("%s/%s", svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyKubeServiceName])
 		serviceInstanceKey := fmt.Sprintf("%s/%s", svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyPodName])
+
+		r.stateMutex.Lock()
 		if r.serviceToNodeAddressMap[serviceKey] == nil {
 			r.serviceToNodeAddressMap[serviceKey] = map[string]string{}
 		}
 		r.serviceToNodeAddressMap[serviceKey][serviceInstanceKey] = node.Node.Address
+		r.stateMutex.Unlock()
+
 		registration := svcRegistration{
 			id:      svc.ID,
 			proxy:   svc.Proxy,
@@ -1312,7 +1312,10 @@ func (r *EndpointsController) populateServiceToNodeMap(agent corev1.Pod, consulN
 			r.Log.Error(err, "failed to hash service registration", "name", svc.Service)
 			return err
 		}
+
+		r.stateMutex.Lock()
 		r.serviceInstanceMap[serviceInstanceKey] = svcRegHash
+		r.stateMutex.Unlock()
 	}
 	return nil
 }
@@ -1325,4 +1328,14 @@ func hasBeenInjected(pod corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+func getConcurrentCalls() int {
+	concurrentCalls := 30
+	if callsConf := os.Getenv("CONSUL_CLIENT_CONCURRENT_CALLS"); callsConf != "" {
+		if i, err := strconv.Atoi(callsConf); err == nil && i > 0 {
+			concurrentCalls = i
+		}
+	}
+	return concurrentCalls
 }
