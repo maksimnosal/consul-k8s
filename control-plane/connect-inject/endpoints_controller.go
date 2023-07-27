@@ -205,9 +205,6 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	for instanceName := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] {
 		if _, ok := nodeAddressMap[instanceName]; !ok {
-			if deletedAddressMap == nil {
-				deletedAddressMap = map[string]bool{}
-			}
 			deletedAddressMap[r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)][instanceName]] = true
 		}
 	}
@@ -904,19 +901,18 @@ func deleteService(r *EndpointsController, nodeAddress string, agentAddresses ma
 		r.Log.Error(err, "failed to get service instances", "name", k8sSvcName)
 		return err
 	}
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
 	for svcID, svc := range svcs {
-		var serviceDeregistered bool
 		r.Log.Info("deregistering service from consul", "svc", svcID)
 		if err = client.Agent().ServiceDeregister(svcID); err != nil {
 			r.Log.Error(err, "failed to deregister service instance", "id", svcID)
 			return err
 		}
-		delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", k8sSvcNamespace, svc.Meta[MetaKeyPodName]))
-		serviceDeregistered = true
 
-		if r.AuthMethod != "" && serviceDeregistered {
+		r.nodeMapMutex.Lock()
+		delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", k8sSvcNamespace, svc.Meta[MetaKeyPodName]))
+		r.nodeMapMutex.Unlock()
+
+		if r.AuthMethod != "" {
 			r.Log.Info("reconciling ACL tokens for service", "svc", svc.Service)
 			err = r.deleteACLTokensForServiceInstance(svc.Service, k8sSvcNamespace, svc.Meta[MetaKeyPodName])
 			if err != nil {
