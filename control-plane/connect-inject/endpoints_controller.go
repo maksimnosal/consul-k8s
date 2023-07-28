@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	mapset "github.com/deckarep/golang-set"
 	"github.com/go-logr/logr"
@@ -127,8 +126,6 @@ type EndpointsController struct {
 	stateMutex              sync.Mutex
 	serviceToNodeAddressMap map[string]map[string]string
 	serviceInstanceMap      map[string]uint64
-	serviceCheckHealth      map[string]string
-	agentTimes              map[string]time.Time
 }
 
 type addressHealth struct {
@@ -150,9 +147,9 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	if r.serviceCheckHealth == nil {
-		r.serviceCheckHealth = make(map[string]string)
-	}
+	// if r.serviceCheckHealth == nil {
+	// 	r.serviceCheckHealth = make(map[string]string)
+	// }
 
 	if r.serviceToNodeAddressMap == nil || len(r.serviceToNodeAddressMap) == 0 {
 		if err := r.setupNodeToServiceMap(ctx, req); err != nil {
@@ -172,16 +169,6 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := r.Client.List(ctx, &agents, &listOptions); err != nil {
 		r.Log.Error(err, "failed to get Consul client agent pods")
 		return ctrl.Result{}, err
-	}
-
-	// We must check to see if agents changed. If so, we must reset their state so that
-	// their services are automatically re-registered. We store their HostIP in a map
-	// for later.
-	resetAgents := make(map[string]bool)
-	for _, agent := range agents.Items {
-		if agent.CreationTimestamp.Time != r.agentTimes[agent.Status.HostIP] {
-			resetAgents[agent.Status.HostIP] = true
-		}
 	}
 
 	err := r.Client.Get(ctx, req.NamespacedName, &serviceEndpoints)
@@ -221,7 +208,7 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 			allAddresses[addressHealth{address: notReadyAddress, health: api.HealthCritical}] = true
 		}
 
-		errs = r.reconcileAddresses(ctx, allAddresses, serviceEndpoints, endpointAddressMap, nodeAddressMap, resetAgents)
+		errs = r.reconcileAddresses(ctx, allAddresses, serviceEndpoints, endpointAddressMap, nodeAddressMap)
 	}
 
 	for instanceName := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] {
@@ -239,16 +226,6 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] = nodeAddressMap
-
-	// Only store the new agent times if we have successfully registered everything.
-	if errs == nil {
-		newTimes := make(map[string]time.Time)
-		for _, agent := range agents.Items {
-			newTimes[agent.Status.HostIP] = agent.CreationTimestamp.Time
-		}
-		r.agentTimes = newTimes
-	}
-
 	return ctrl.Result{}, errs
 }
 
@@ -258,7 +235,6 @@ func (r *EndpointsController) reconcileAddresses(
 	serviceEndpoints corev1.Endpoints,
 	endpointAddressMap map[string]bool,
 	nodeAddressMap map[string]string,
-	resetAgents map[string]bool,
 ) error {
 	var errs error
 	concurrentCalls := getConcurrentCalls()
@@ -278,7 +254,7 @@ func (r *EndpointsController) reconcileAddresses(
 		go func() {
 			defer waiter.Done()
 			for addrHealth := range addressHealthChan {
-				if err := r.reconcileAddress(ctx, addrHealth, serviceEndpoints, endpointAddressMap, nodeAddressMap, resetAgents); err != nil {
+				if err := r.reconcileAddress(ctx, addrHealth, serviceEndpoints, endpointAddressMap, nodeAddressMap); err != nil {
 					r.Log.Error(err, "error while reconciling address", "address", addrHealth.address)
 					hadError.Store(true)
 				}
@@ -305,11 +281,10 @@ func (r *EndpointsController) reconcileAddress(
 	serviceEndpoints corev1.Endpoints,
 	endpointAddressMap map[string]bool,
 	nodeAddressMap map[string]string,
-	resetAgents map[string]bool,
 ) error {
 	var errs error
 	if addressHealth.address.TargetRef != nil && addressHealth.address.TargetRef.Kind == "Pod" {
-		if err := r.registerServicesAndHealthCheck(ctx, serviceEndpoints, addressHealth, endpointAddressMap, nodeAddressMap, resetAgents); err != nil {
+		if err := r.registerServicesAndHealthCheck(ctx, serviceEndpoints, addressHealth, endpointAddressMap, nodeAddressMap); err != nil {
 			r.Log.Error(err, "failed to register services or health check", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
 			errs = multierror.Append(errs, err)
 		}
@@ -339,7 +314,6 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 	addressHealth addressHealth,
 	endpointAddressMap map[string]bool,
 	nodeAddressMap map[string]string,
-	resetAgents map[string]bool,
 ) error {
 	// Get pod associated with this address.
 	var pod corev1.Pod
@@ -394,9 +368,7 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 		hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]
 		r.stateMutex.Unlock()
 
-		// If the agent was bounced, we need to force a reset no matter what.
-		resetAgent := resetAgents[podHostIP]
-		if (resetAgent || !ok || hash != svcRegHash) && managedByEndpointsController {
+		if (!ok || hash != svcRegHash) && managedByEndpointsController {
 			// Register the service instance with the local agent.
 			// Note: the order of how we register services is important,
 			// and the connect-proxy service should come after the "main" service
@@ -432,25 +404,16 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 		serviceID := getServiceID(pod, serviceEndpoints)
 		healthCheckID := getConsulHealthCheckID(pod, serviceID)
 
-		r.stateMutex.Lock()
-		oldHealth := r.serviceCheckHealth[healthCheckID]
-		r.stateMutex.Unlock()
-		if forceHealthChecks || resetAgent || (addressHealth.health != oldHealth) {
-			r.Log.Info("updating health check status for service",
-				"serviceID", serviceID, "reason", reason,
-				"status", addressHealth.health, "oldStatus", r.serviceCheckHealth[healthCheckID])
-			err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
-			if err != nil {
-				r.stateMutex.Lock()
-				delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
-				delete(r.serviceCheckHealth, healthCheckID)
-				r.stateMutex.Unlock()
-				r.Log.Error(err, "failed to update health check status for service", "name", serviceName)
-				return err
-			}
+		r.Log.Info("updating health check status for service",
+			"serviceID", serviceID, "reason", reason,
+			"status", addressHealth.health)
+		err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
+		if err != nil {
 			r.stateMutex.Lock()
-			r.serviceCheckHealth[healthCheckID] = addressHealth.health
+			delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
 			r.stateMutex.Unlock()
+			r.Log.Error(err, "failed to update health check status for service", "name", serviceName)
+			return err
 		}
 	}
 
