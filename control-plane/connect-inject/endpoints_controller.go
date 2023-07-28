@@ -180,8 +180,14 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 	// agents are restarted.
 	currentAgents := make(map[string]time.Time)
 	for _, agent := range agents.Items {
-		if agent.Status.HostIP != "" && agent.CreationTimestamp.After(currentAgents[agent.Status.HostIP]) {
-			currentAgents[agent.Status.HostIP] = agent.CreationTimestamp.Time
+		var startTime time.Time
+		for _, container := range agent.Status.ContainerStatuses {
+			if container.Name == "consul" && container.State.Running != nil {
+				startTime = container.State.Running.StartedAt.Time
+			}
+		}
+		if agent.Status.HostIP != "" && startTime.After(currentAgents[agent.Status.HostIP]) {
+			currentAgents[agent.Status.HostIP] = startTime
 		}
 	}
 
