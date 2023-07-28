@@ -890,8 +890,6 @@ func deleteService(r *EndpointsController, nodeAddress string, agentAddresses ma
 		r.Log.Error(err, "failed to get service instances", "name", k8sSvcName)
 		return err
 	}
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
 	for svcID, svc := range svcs {
 		var serviceDeregistered bool
 		r.Log.Info("deregistering service from consul", "svc", svcID)
@@ -899,7 +897,9 @@ func deleteService(r *EndpointsController, nodeAddress string, agentAddresses ma
 			r.Log.Error(err, "failed to deregister service instance", "id", svcID)
 			return err
 		}
+		r.nodeMapMutex.Lock()
 		delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", k8sSvcNamespace, svc.Meta[MetaKeyPodName]))
+		r.nodeMapMutex.Unlock()
 		serviceDeregistered = true
 
 		if r.AuthMethod != "" && serviceDeregistered {
