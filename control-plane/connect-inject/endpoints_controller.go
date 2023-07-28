@@ -415,7 +415,7 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 		// lifecycle sidecar for legacy services. Here, we always update the health check for legacy and
 		// newer services idempotently since the service health check is not added as part of the service
 		// registration.
-		if shouldUpdate {
+		if shouldUpdate || os.Getenv("INJECT_FORCE_HEALTH_UPDATES") == "TRUE" {
 			err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
 			if err != nil {
 				r.nodeMapMutex.Lock()
