@@ -297,12 +297,11 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 	}
 	podHostIP := pod.Status.HostIP
 
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
-
 	if hasBeenInjected(pod) {
 		// Build the endpointAddressMap up for deregistering service instances later.
+		r.nodeMapMutex.Lock()
 		endpointAddressMap[pod.Status.PodIP] = true
+		r.nodeMapMutex.Unlock()
 		// Create client for Consul agent local to the pod.
 		client, err := r.remoteConsulClient(podHostIP, r.consulNamespace(pod.Namespace))
 		if err != nil {
@@ -315,7 +314,9 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 			managedByEndpointsController = true
 		}
 		if managedByEndpointsController {
+			r.nodeMapMutex.Lock()
 			nodeAddressMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = podHostIP
+			r.nodeMapMutex.Unlock()
 		}
 		// Get information from the pod to create service instance registrations.
 		serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
@@ -333,12 +334,11 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 			r.Log.Error(err, "failed to hash service registration", "name", serviceRegistration.Name)
 			return err
 		}
+		r.nodeMapMutex.Lock()
+		hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]
+		r.nodeMapMutex.Unlock()
 		// For pods managed by this controller, create and register the service instance.
-		if hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]; (!ok || hash != svcRegHash) && managedByEndpointsController {
-			if r.serviceInstanceMap == nil {
-				r.serviceInstanceMap = map[string]uint64{}
-			}
-
+		if (!ok || hash != svcRegHash) && managedByEndpointsController {
 			// Register the service instance with the local agent.
 			// Note: the order of how we register services is important,
 			// and the connect-proxy service should come after the "main" service
@@ -359,7 +359,9 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 				return err
 			}
 
+			r.nodeMapMutex.Lock()
 			r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = svcRegHash
+			r.nodeMapMutex.Unlock()
 		}
 
 		// Update the service TTL health check for both legacy services and services managed by endpoints
@@ -374,7 +376,9 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 		healthCheckID := getConsulHealthCheckID(pod, serviceID)
 		err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
 		if err != nil {
+			r.nodeMapMutex.Lock()
 			delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+			r.nodeMapMutex.Unlock()
 			r.Log.Error(err, "failed to update health check status for service", "name", serviceName)
 			return err
 		}
@@ -1085,15 +1089,15 @@ func (r *EndpointsController) processUpstreams(pod corev1.Pod) ([]api.Upstream, 
 					// accidentally forgetting to set a mesh gateway mode
 					// and then being confused as to why their traffic isn't
 					// routing.
-					entry, _, err := r.ConsulClient.ConfigEntries().Get(api.ProxyDefaults, api.ProxyConfigGlobal, nil)
-					if err != nil && strings.Contains(err.Error(), "Unexpected response code: 404") {
-						return []api.Upstream{}, fmt.Errorf("upstream %q is invalid: there is no ProxyDefaults config to set mesh gateway mode", raw)
-					} else if err == nil {
-						mode := entry.(*api.ProxyConfigEntry).MeshGateway.Mode
-						if mode != api.MeshGatewayModeLocal && mode != api.MeshGatewayModeRemote {
-							return []api.Upstream{}, fmt.Errorf("upstream %q is invalid: ProxyDefaults mesh gateway mode is neither %q nor %q", raw, api.MeshGatewayModeLocal, api.MeshGatewayModeRemote)
-						}
-					}
+					// entry, _, err := r.ConsulClient.ConfigEntries().Get(api.ProxyDefaults, api.ProxyConfigGlobal, nil)
+					// if err != nil && strings.Contains(err.Error(), "Unexpected response code: 404") {
+					// 	return []api.Upstream{}, fmt.Errorf("upstream %q is invalid: there is no ProxyDefaults config to set mesh gateway mode", raw)
+					// } else if err == nil {
+					// 	mode := entry.(*api.ProxyConfigEntry).MeshGateway.Mode
+					// 	if mode != api.MeshGatewayModeLocal && mode != api.MeshGatewayModeRemote {
+					// 		return []api.Upstream{}, fmt.Errorf("upstream %q is invalid: ProxyDefaults mesh gateway mode is neither %q nor %q", raw, api.MeshGatewayModeLocal, api.MeshGatewayModeRemote)
+					// 	}
+					// }
 					// NOTE: If we can't reach Consul we don't error out because
 					// that would fail the pod scheduling and this is a nice-to-have
 					// check, not something that should block during a Consul hiccup.
@@ -1126,10 +1130,10 @@ func (r *EndpointsController) processUpstreams(pod corev1.Pod) ([]api.Upstream, 
 // remoteConsulClient returns an *api.Client that points at the consul agent local to the pod for a provided namespace.
 func (r *EndpointsController) remoteConsulClient(ip string, namespace string) (*api.Client, error) {
 	newAddr := fmt.Sprintf("%s://%s:%s", r.ConsulScheme, ip, r.ConsulPort)
-	localConfig := r.ConsulClientCfg
+	localConfig := *r.ConsulClientCfg
 	localConfig.Address = newAddr
 	localConfig.Namespace = namespace
-	return consul.NewClient(localConfig)
+	return consul.NewClient(&localConfig)
 }
 
 // shouldIgnore ignores namespaces where we don't connect-inject.
