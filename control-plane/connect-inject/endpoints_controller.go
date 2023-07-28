@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	mapset "github.com/deckarep/golang-set"
 	"github.com/go-logr/logr"
@@ -124,6 +125,12 @@ type EndpointsController struct {
 	nodeMapMutex            sync.Mutex
 	serviceToNodeAddressMap map[string]map[string]string
 	serviceInstanceMap      map[string]uint64
+	healthCheckCache        map[string]healthCheckStatus
+}
+
+type healthCheckStatus struct {
+	agentCreationTime time.Time
+	status            string
 }
 
 type addressHealth struct {
@@ -145,25 +152,47 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
+	if r.healthCheckCache == nil {
+		r.healthCheckCache = make(map[string]healthCheckStatus)
+	}
+
 	if r.serviceToNodeAddressMap == nil || len(r.serviceToNodeAddressMap) == 0 {
 		if err := r.setupNodeToServiceMap(ctx, req); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	err := r.Client.Get(ctx, req.NamespacedName, &serviceEndpoints)
+	agents := corev1.PodList{}
+	listOptions := client.ListOptions{
+		Namespace: r.ReleaseNamespace,
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			"component": "client",
+			"app":       "consul",
+			"release":   r.ReleaseName,
+		}),
+	}
+	if err := r.Client.List(ctx, &agents, &listOptions); err != nil {
+		r.Log.Error(err, "failed to get Consul client agent pods")
+		return ctrl.Result{}, err
+	}
 
-	// endpointPods holds a set of all pods this endpoints object is currently pointing to.
-	// We use this later when we reconcile ACL tokens to decide whether an ACL token in Consul
-	// is for a pod that no longer exists.
-	endpointPods := mapset.NewSet()
+	// Store the latest agent creation time for each HostIP to ensure we trigger events when
+	// agents are restarted.
+	currentAgents := make(map[string]time.Time)
+	for _, agent := range agents.Items {
+		if agent.Status.HostIP != "" && agent.CreationTimestamp.After(currentAgents[agent.Status.HostIP]) {
+			currentAgents[agent.Status.HostIP] = agent.CreationTimestamp.Time
+		}
+	}
+
+	err := r.Client.Get(ctx, req.NamespacedName, &serviceEndpoints)
 
 	// If the endpoints object has been deleted (and we get an IsNotFound
 	// error), we need to deregister all instances in Consul for that service.
 	if k8serrors.IsNotFound(err) {
 		// Deregister all instances in Consul for this service. The function deregisterServiceOnAgents handles
 		// the case where the Consul service name is different from the Kubernetes service name.
-		if err = r.deregisterServiceOnAgents(ctx, req.Name, req.Namespace, nil, nil); err != nil {
+		if err = r.deregisterServiceOnAgents(ctx, agents, req.Name, req.Namespace, nil, nil); err != nil {
 			return ctrl.Result{}, err
 		}
 		delete(r.serviceToNodeAddressMap, fmt.Sprintf("%s/%s", req.Namespace, req.Name))
@@ -193,14 +222,11 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 			allAddresses[addressHealth{address: notReadyAddress, health: api.HealthCritical}] = true
 		}
 
-		errs = r.reconcileAddresses(ctx, allAddresses, endpointPods, serviceEndpoints, endpointAddressMap, nodeAddressMap)
+		errs = r.reconcileAddresses(ctx, allAddresses, currentAgents, serviceEndpoints, endpointAddressMap, nodeAddressMap)
 	}
 
 	for instanceName := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] {
 		if _, ok := nodeAddressMap[instanceName]; !ok {
-			if deletedAddressMap == nil {
-				deletedAddressMap = map[string]bool{}
-			}
 			deletedAddressMap[r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)][instanceName]] = true
 		}
 	}
@@ -208,7 +234,7 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Compare service instances in Consul with addresses in Endpoints. If an address is not in Endpoints, deregister
 	// from Consul. This uses endpointAddressMap which is populated with the addresses in the Endpoints object during
 	// the registration codepath.
-	if err = r.deregisterServiceOnAgents(ctx, serviceEndpoints.Name, serviceEndpoints.Namespace, endpointAddressMap, deletedAddressMap); err != nil {
+	if err = r.deregisterServiceOnAgents(ctx, agents, serviceEndpoints.Name, serviceEndpoints.Namespace, endpointAddressMap, deletedAddressMap); err != nil {
 		r.Log.Error(err, "failed to deregister endpoints on all agents", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
 		errs = multierror.Append(errs, err)
 	}
@@ -218,7 +244,7 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, errs
 }
 
-func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddresses map[addressHealth]bool, endpointPods mapset.Set, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
+func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddresses map[addressHealth]bool, currentAgents map[string]time.Time, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
 	var errs error
 	concurrentCalls := getConcurrentCalls()
 	if concurrentCalls > len(allAddresses) {
@@ -237,7 +263,7 @@ func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddress
 		go func() {
 			defer waiter.Done()
 			for addrHealth := range addressHealthChan {
-				if err := r.reconcileAddress(ctx, addrHealth, endpointPods, serviceEndpoints, endpointAddressMap, nodeAddressMap); err != nil {
+				if err := r.reconcileAddress(ctx, addrHealth, currentAgents, serviceEndpoints, endpointAddressMap, nodeAddressMap); err != nil {
 					r.Log.Error(err, "error while reconciling address", "address", addrHealth.address)
 					hadError.Store(true)
 				}
@@ -258,11 +284,10 @@ func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddress
 	return errs
 }
 
-func (r *EndpointsController) reconcileAddress(ctx context.Context, addressHealth addressHealth, endpointPods mapset.Set, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
+func (r *EndpointsController) reconcileAddress(ctx context.Context, addressHealth addressHealth, currentAgents map[string]time.Time, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
 	var errs error
 	if addressHealth.address.TargetRef != nil && addressHealth.address.TargetRef.Kind == "Pod" {
-		endpointPods.Add(addressHealth.address.TargetRef.Name)
-		if err := r.registerServicesAndHealthCheck(ctx, serviceEndpoints, addressHealth, endpointAddressMap, nodeAddressMap); err != nil {
+		if err := r.registerServicesAndHealthCheck(ctx, serviceEndpoints, addressHealth, currentAgents, endpointAddressMap, nodeAddressMap); err != nil {
 			r.Log.Error(err, "failed to register services or health check", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
 			errs = multierror.Append(errs, err)
 		}
@@ -286,7 +311,14 @@ func (r *EndpointsController) SetupWithManager(mgr ctrl.Manager) error {
 
 // registerServicesAndHealthCheck creates Consul registrations for the service and proxy and register them with Consul.
 // It also upserts a Kubernetes health check for the service based on whether the endpoint address is ready.
-func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context, serviceEndpoints corev1.Endpoints, addressHealth addressHealth, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
+func (r *EndpointsController) registerServicesAndHealthCheck(
+	ctx context.Context,
+	serviceEndpoints corev1.Endpoints,
+	addressHealth addressHealth,
+	currentAgents map[string]time.Time,
+	endpointAddressMap map[string]bool,
+	nodeAddressMap map[string]string,
+) error {
 	// Get pod associated with this address.
 	var pod corev1.Pod
 
@@ -337,8 +369,16 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 		r.nodeMapMutex.Lock()
 		hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]
 		r.nodeMapMutex.Unlock()
+
 		// For pods managed by this controller, create and register the service instance.
-		if (!ok || hash != svcRegHash) && managedByEndpointsController {
+		serviceID := getServiceID(pod, serviceEndpoints)
+		healthCheckID := getConsulHealthCheckID(pod, serviceID)
+		r.nodeMapMutex.Lock()
+		oldHealth := r.healthCheckCache[healthCheckID]
+		shouldUpdate := !currentAgents[podHostIP].Equal(oldHealth.agentCreationTime) || oldHealth.status != addressHealth.health
+		r.nodeMapMutex.Unlock()
+
+		if (shouldUpdate || !ok || hash != svcRegHash) && managedByEndpointsController {
 			// Register the service instance with the local agent.
 			// Note: the order of how we register services is important,
 			// and the connect-proxy service should come after the "main" service
@@ -369,18 +409,22 @@ func (r *EndpointsController) registerServicesAndHealthCheck(ctx context.Context
 		// lifecycle sidecar for legacy services. Here, we always update the health check for legacy and
 		// newer services idempotently since the service health check is not added as part of the service
 		// registration.
-		reason := getHealthCheckStatusReason(addressHealth.health, pod.Name, pod.Namespace)
-		serviceName := getServiceName(pod, serviceEndpoints)
-		r.Log.Info("updating health check status for service", "name", serviceName, "reason", reason, "status", addressHealth.health)
-		serviceID := getServiceID(pod, serviceEndpoints)
-		healthCheckID := getConsulHealthCheckID(pod, serviceID)
-		err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
-		if err != nil {
+		if shouldUpdate {
+			err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
+			if err != nil {
+				r.nodeMapMutex.Lock()
+				delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+				delete(r.healthCheckCache, healthCheckID)
+				r.nodeMapMutex.Unlock()
+				r.Log.Error(err, "failed to update health check status for service", "serviceID", serviceID)
+				return err
+			}
 			r.nodeMapMutex.Lock()
-			delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+			r.healthCheckCache[healthCheckID] = healthCheckStatus{
+				agentCreationTime: currentAgents[podHostIP],
+				status:            addressHealth.health,
+			}
 			r.nodeMapMutex.Unlock()
-			r.Log.Error(err, "failed to update health check status for service", "name", serviceName)
-			return err
 		}
 	}
 
@@ -448,6 +492,7 @@ func (r *EndpointsController) upsertHealthCheck(pod corev1.Pod, client *api.Clie
 		return fmt.Errorf("unable to get agent health checks: serviceID=%s, checkID=%s, %s", serviceID, healthCheckID, err)
 	}
 	if serviceCheck == nil {
+		r.Log.Info("inserting health check status for service", "serviceID", serviceID, "reason", reason, "status", status)
 		// Create a new health check.
 		err = registerConsulHealthCheck(client, healthCheckID, serviceID, status)
 		if err != nil {
@@ -461,6 +506,7 @@ func (r *EndpointsController) upsertHealthCheck(pod corev1.Pod, client *api.Clie
 			return err
 		}
 	} else if serviceCheck.Status != status {
+		r.Log.Info("updating health check status for service", "serviceID", serviceID, "reason", reason, "status", status)
 		err = r.updateConsulHealthCheckStatus(client, healthCheckID, status, reason)
 		if err != nil {
 			return err
@@ -772,22 +818,9 @@ func getHealthCheckStatusReason(healthCheckStatus, podName, podNamespace string)
 // The argument endpointsAddressesMap decides whether to deregister *all* service instances or selectively deregister
 // them only if they are not in endpointsAddressesMap. If the map is nil, it will deregister all instances. If the map
 // has addresses, it will only deregister instances not in the map.
-func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8sSvcName, k8sSvcNamespace string, endpointsAddressesMap, deletedAddressMap map[string]bool) error {
+func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, agents corev1.PodList, k8sSvcName, k8sSvcNamespace string, endpointsAddressesMap, deletedAddressMap map[string]bool) error {
 	consulNS := r.consulNamespace(k8sSvcNamespace)
 	agentAddresses := map[string]bool{}
-	agents := corev1.PodList{}
-	listOptions := client.ListOptions{
-		Namespace: r.ReleaseNamespace,
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			"component": "client",
-			"app":       "consul",
-			"release":   r.ReleaseName,
-		}),
-	}
-	if err := r.Client.List(ctx, &agents, &listOptions); err != nil {
-		r.Log.Error(err, "failed to get Consul client agent pods")
-		return err
-	}
 	for _, pod := range agents.Items {
 		agentAddresses[pod.Status.HostIP] = true
 	}
