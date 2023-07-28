@@ -347,6 +347,18 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 			r.Log.Error(err, "failed to create a new Consul client", "address", podHostIP)
 			return err
 		}
+
+		// Retrieve the health check that would exist if the service had one registered for this pod.
+		serviceName := getServiceName(pod, serviceEndpoints)
+		serviceID := getServiceID(pod, serviceEndpoints)
+		healthCheckID := getConsulHealthCheckID(pod, serviceID)
+		serviceCheck, checkErr := getServiceCheck(client, healthCheckID)
+		if checkErr != nil {
+			r.stateMutex.Lock()
+			delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+			r.stateMutex.Unlock()
+		}
+
 		// Get information from the pod to create service instance registrations.
 		serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
 		if err != nil {
@@ -368,7 +380,7 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 		hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]
 		r.stateMutex.Unlock()
 
-		if (!ok || hash != svcRegHash) && managedByEndpointsController {
+		if (checkErr != nil || !ok || hash != svcRegHash) && managedByEndpointsController {
 			// Register the service instance with the local agent.
 			// Note: the order of how we register services is important,
 			// and the connect-proxy service should come after the "main" service
@@ -399,15 +411,7 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 		// lifecycle sidecar for legacy services. Here, we always update the health check for legacy and
 		// newer services idempotently since the service health check is not added as part of the service
 		// registration.
-		reason := getHealthCheckStatusReason(addressHealth.health, pod.Name, pod.Namespace)
-		serviceName := getServiceName(pod, serviceEndpoints)
-		serviceID := getServiceID(pod, serviceEndpoints)
-		healthCheckID := getConsulHealthCheckID(pod, serviceID)
-
-		r.Log.Info("updating health check status for service",
-			"serviceID", serviceID, "reason", reason,
-			"status", addressHealth.health)
-		err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
+		err = r.upsertHealthCheck(pod, client, serviceCheck, serviceID, healthCheckID, addressHealth.health)
 		if err != nil {
 			r.stateMutex.Lock()
 			delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
@@ -473,28 +477,29 @@ func (r *EndpointsController) updateConsulHealthCheckStatus(client *api.Client, 
 
 // upsertHealthCheck checks if the healthcheck exists for the service, and creates it if it doesn't exist, or updates it
 // if it does.
-func (r *EndpointsController) upsertHealthCheck(pod corev1.Pod, client *api.Client, serviceID, healthCheckID, status string) error {
-	reason := getHealthCheckStatusReason(status, pod.Name, pod.Namespace)
-	// Retrieve the health check that would exist if the service had one registered for this pod.
-	serviceCheck, err := getServiceCheck(client, healthCheckID)
-	if err != nil {
-		return fmt.Errorf("unable to get agent health checks: serviceID=%s, checkID=%s, %s", serviceID, healthCheckID, err)
-	}
-	if serviceCheck == nil {
+func (r *EndpointsController) upsertHealthCheck(pod corev1.Pod, client *api.Client, oldStatus *api.AgentCheck, serviceID, healthCheckID, newStatus string) error {
+	reason := getHealthCheckStatusReason(newStatus, pod.Name, pod.Namespace)
+	if oldStatus == nil {
+		r.Log.Info("creating health check status for service",
+			"serviceID", serviceID, "reason", reason,
+			"status", newStatus)
 		// Create a new health check.
-		err = registerConsulHealthCheck(client, healthCheckID, serviceID, status)
+		err := registerConsulHealthCheck(client, healthCheckID, serviceID, newStatus)
 		if err != nil {
 			return err
 		}
 
 		// Also update it, the reason this is separate is there is no way to set the Output field of the health check
 		// at creation time, and this is what is displayed on the UI as opposed to the Notes field.
-		err = r.updateConsulHealthCheckStatus(client, healthCheckID, status, reason)
+		err = r.updateConsulHealthCheckStatus(client, healthCheckID, newStatus, reason)
 		if err != nil {
 			return err
 		}
-	} else if serviceCheck.Status != status {
-		err = r.updateConsulHealthCheckStatus(client, healthCheckID, status, reason)
+	} else if oldStatus.Status != newStatus {
+		r.Log.Info("updating health check status for service",
+			"serviceID", serviceID, "reason", reason,
+			"status", newStatus)
+		err := r.updateConsulHealthCheckStatus(client, healthCheckID, newStatus, reason)
 		if err != nil {
 			return err
 		}
