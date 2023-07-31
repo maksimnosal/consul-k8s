@@ -94,6 +94,8 @@ type Command struct {
 	flagDefaultSidecarProxyLifecycleShutdownGracePeriodSeconds   int
 	flagDefaultSidecarProxyLifecycleGracefulPort                 string
 	flagDefaultSidecarProxyLifecycleGracefulShutdownPath         string
+	flagDefaultSidecarProxyLifecycleGracefulStartupPath          string
+	flagDefaultSidecarProxyLifecycleStartupGracePeriodSeconds    int
 
 	// Metrics settings.
 	flagDefaultEnableMetrics        bool
