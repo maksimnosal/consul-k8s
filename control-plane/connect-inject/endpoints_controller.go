@@ -385,6 +385,7 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 		r.nodeMapMutex.Unlock()
 
 		if (shouldUpdate || !ok || hash != svcRegHash) && managedByEndpointsController {
+			shouldUpdate = true
 			// Register the service instance with the local agent.
 			// Note: the order of how we register services is important,
 			// and the connect-proxy service should come after the "main" service
