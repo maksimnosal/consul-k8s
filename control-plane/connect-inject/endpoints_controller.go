@@ -339,22 +339,19 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 		// Build the endpointAddressMap up for deregistering service instances later.
 		r.nodeMapMutex.Lock()
 		endpointAddressMap[pod.Status.PodIP] = true
+		var managedByEndpointsController bool
+		if raw, ok := pod.Labels[keyManagedBy]; ok && raw == managedByValue {
+			managedByEndpointsController = true
+		}
+		if managedByEndpointsController {
+			nodeAddressMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = podHostIP
+		}
 		r.nodeMapMutex.Unlock()
 		// Create client for Consul agent local to the pod.
 		client, err := r.remoteConsulClient(podHostIP, r.consulNamespace(pod.Namespace))
 		if err != nil {
 			r.Log.Error(err, "failed to create a new Consul client", "address", podHostIP)
 			return err
-		}
-
-		var managedByEndpointsController bool
-		if raw, ok := pod.Labels[keyManagedBy]; ok && raw == managedByValue {
-			managedByEndpointsController = true
-		}
-		if managedByEndpointsController {
-			r.nodeMapMutex.Lock()
-			nodeAddressMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)] = podHostIP
-			r.nodeMapMutex.Unlock()
 		}
 		// Get information from the pod to create service instance registrations.
 		serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
