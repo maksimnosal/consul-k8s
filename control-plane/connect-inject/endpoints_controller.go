@@ -372,20 +372,34 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 			r.Log.Error(err, "failed to hash service registration", "name", serviceRegistration.Name)
 			return err
 		}
-		r.nodeMapMutex.Lock()
-		hash, ok := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]
-		r.nodeMapMutex.Unlock()
 
 		// For pods managed by this controller, create and register the service instance.
 		serviceID := getServiceID(pod, serviceEndpoints)
 		healthCheckID := getConsulHealthCheckID(pod, serviceID)
+
 		r.nodeMapMutex.Lock()
+		hash, found := r.serviceInstanceMap[fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)]
 		oldHealth := r.healthCheckCache[healthCheckID]
-		shouldUpdate := !currentAgents[podHostIP].Equal(oldHealth.agentCreationTime) || oldHealth.status != addressHealth.health
+
+		shouldUpdateRegistration := (!found || hash != svcRegHash ||
+			// The agent was restarted
+			!currentAgents[podHostIP].Equal(oldHealth.agentCreationTime))
+		shouldUpdateHealth := (shouldUpdateRegistration ||
+			// The health status changed
+			oldHealth.status != addressHealth.health)
+
+		// Clear out the cache if we are going to attempt a modification,
+		// so that if an error occurs, subsequent passes will attempt
+		// to be resolved.
+		if shouldUpdateHealth {
+			delete(r.healthCheckCache, healthCheckID)
+		}
+		if shouldUpdateRegistration {
+			delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+		}
 		r.nodeMapMutex.Unlock()
 
-		if (shouldUpdate || !ok || hash != svcRegHash) && managedByEndpointsController {
-			shouldUpdate = true
+		if shouldUpdateRegistration && managedByEndpointsController {
 			// Register the service instance with the local agent.
 			// Note: the order of how we register services is important,
 			// and the connect-proxy service should come after the "main" service
@@ -416,7 +430,7 @@ func (r *EndpointsController) registerServicesAndHealthCheck(
 		// lifecycle sidecar for legacy services. Here, we always update the health check for legacy and
 		// newer services idempotently since the service health check is not added as part of the service
 		// registration.
-		if shouldUpdate || os.Getenv("INJECT_FORCE_HEALTH_UPDATES") == "TRUE" {
+		if shouldUpdateHealth || os.Getenv("INJECT_FORCE_HEALTH_UPDATES") == "TRUE" {
 			err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
 			if err != nil {
 				r.nodeMapMutex.Lock()
