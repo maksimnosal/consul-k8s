@@ -122,6 +122,12 @@ func KubectlScale(t *testing.T, options *k8s.KubectlOptions, deployment string, 
 	require.NoError(t, err)
 }
 
+// KubectlLabel takes a pod and applies the given label to it.
+func KubectlLabel(t *testing.T, options *k8s.KubectlOptions, pod string, key string, value string) {
+	_, err := RunKubectlAndGetOutputE(t, options, "label", "pods", kubectlTimeout, "--overwrite", pod, fmt.Sprintf("%s=%s", key, value))
+	require.NoError(t, err)
+}
+
 // RunKubectl runs an arbitrary kubectl command provided via args and ignores the output.
 // If there's an error running the command, fail the test.
 func RunKubectl(t *testing.T, options *k8s.KubectlOptions, args ...string) {
