@@ -126,6 +126,7 @@ type EndpointsController struct {
 	serviceToNodeAddressMap map[string]map[string]string
 	serviceInstanceMap      map[string]uint64
 	healthCheckCache        map[string]healthCheckStatus
+	uncachedAgents          map[string]bool
 }
 
 type healthCheckStatus struct {
@@ -156,12 +157,6 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 		r.healthCheckCache = make(map[string]healthCheckStatus)
 	}
 
-	if r.serviceToNodeAddressMap == nil || len(r.serviceToNodeAddressMap) == 0 {
-		if err := r.setupNodeToServiceMap(ctx, req); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
 	agents := corev1.PodList{}
 	listOptions := client.ListOptions{
 		Namespace: r.ReleaseNamespace,
@@ -173,6 +168,10 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	if err := r.Client.List(ctx, &agents, &listOptions); err != nil {
 		r.Log.Error(err, "failed to get Consul client agent pods")
+		return ctrl.Result{}, err
+	}
+
+	if err := r.populateCache(ctx, req, agents); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -969,27 +968,41 @@ func deleteService(r *EndpointsController, nodeAddress string, agentAddresses ma
 	return nil
 }
 
-func (r *EndpointsController) setupNodeToServiceMap(ctx context.Context, req ctrl.Request) error {
-	agents := corev1.PodList{}
-	listOptions := client.ListOptions{
-		Namespace: r.ReleaseNamespace,
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			"component": "client",
-			"app":       "consul",
-			"release":   r.ReleaseName,
-		}),
-	}
-	if err := r.Client.List(ctx, &agents, &listOptions); err != nil {
-		r.Log.Error(err, "failed to get Consul client agent pods")
-		return err
+func (r *EndpointsController) populateCache(ctx context.Context, req ctrl.Request, agents corev1.PodList) error {
+
+	// We need to remove any agents from the uncached map that don't exist anymore, so that we don't try to contact them.
+	// This doesn't happen on the first run.
+	if r.uncachedAgents != nil {
+		currentAgents := map[string]bool{}
+		for _, agent := range agents.Items {
+			if agent.Status.HostIP != "" {
+				currentAgents[agent.Status.HostIP] = true
+			}
+		}
+		for agent := range r.uncachedAgents {
+			if _, ok := currentAgents[agent]; !ok {
+				delete(r.uncachedAgents, agent)
+			}
+		}
 	}
 
-	r.serviceToNodeAddressMap = map[string]map[string]string{}
-	r.serviceInstanceMap = map[string]uint64{}
+	// First-run initialization
+	if r.serviceInstanceMap == nil {
+		r.serviceInstanceMap = map[string]uint64{}
+		r.serviceToNodeAddressMap = map[string]map[string]string{}
+		r.uncachedAgents = map[string]bool{}
+		// During the first run, we mark all agents as being uncached.
+		for _, agent := range agents.Items {
+			if agent.Status.HostIP != "" {
+				r.uncachedAgents[agent.Status.HostIP] = true
+			}
+		}
+	}
+
 	// Control the number of concurrent calls that can be made to agents
 	concurrentCalls := getConcurrentCalls()
-	if concurrentCalls > len(agents.Items) {
-		concurrentCalls = len(agents.Items)
+	if concurrentCalls > len(r.uncachedAgents) {
+		concurrentCalls = len(r.uncachedAgents)
 	}
 
 	// Wait for all items to complete before returning to preserve the original flow of data.
@@ -999,21 +1012,25 @@ func (r *EndpointsController) setupNodeToServiceMap(ctx context.Context, req ctr
 
 	// Queue the agent calls.
 	var hadError atomic.Bool
-	agentChan := make(chan corev1.Pod)
+	agentChan := make(chan string)
 	for i := 0; i < concurrentCalls; i++ {
 		go func() {
 			defer waiter.Done()
-			for agent := range agentChan {
-				if err := r.populateServiceToNodeMap(agent, r.consulNamespace(req.Namespace)); err != nil {
-					r.Log.Error(err, "error while contacting agent", "agentIP", agent.Status.HostIP)
+			for agentHostIP := range agentChan {
+				if err := r.populateServiceToNodeMap(agentHostIP, r.consulNamespace(req.Namespace)); err != nil {
+					r.Log.Error(err, "error while contacting agent for cache population", "agentIP", agentHostIP)
 					hadError.Store(true)
+				} else {
+					r.nodeMapMutex.Lock()
+					delete(r.uncachedAgents, agentHostIP)
+					r.nodeMapMutex.Unlock()
 				}
 			}
 		}()
 	}
 
-	for _, agent := range agents.Items {
-		agentChan <- agent
+	for agentHostIP := range r.uncachedAgents {
+		agentChan <- agentHostIP
 	}
 	close(agentChan)
 
@@ -1299,8 +1316,8 @@ func (r *EndpointsController) consulNamespace(namespace string) string {
 	return namespaces.ConsulNamespace(namespace, r.EnableConsulNamespaces, r.ConsulDestinationNamespace, r.EnableNSMirroring, r.NSMirroringPrefix)
 }
 
-func (r *EndpointsController) populateServiceToNodeMap(agent corev1.Pod, consulNS string) error {
-	consulClient, err := r.remoteConsulClient(agent.Status.HostIP, consulNS)
+func (r *EndpointsController) populateServiceToNodeMap(agentHostIP string, consulNS string) error {
+	consulClient, err := r.remoteConsulClient(agentHostIP, consulNS)
 	if err != nil {
 		return err
 	}
