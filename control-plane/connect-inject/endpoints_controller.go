@@ -122,16 +122,36 @@ type EndpointsController struct {
 	Scheme *runtime.Scheme
 	context.Context
 
-	nodeMapMutex            sync.Mutex
-	serviceToNodeAddressMap map[string]map[string]string
-	serviceInstanceMap      map[string]uint64
-	healthCheckCache        map[string]healthCheckStatus
-	uncachedAgents          map[string]bool
+	stateMutex sync.Mutex
+	podCache   map[serviceName]map[podID]podStatus
+	agentCache map[hostIP]agentStatus
 }
 
-type healthCheckStatus struct {
-	agentCreationTime time.Time
-	status            string
+type hostIP string
+
+type serviceName struct {
+	name string
+	ns   string
+}
+
+type podID struct {
+	name string
+	ns   string
+}
+
+type podStatus struct {
+	serviceName         serviceName
+	podID               podID
+	hostIP              hostIP
+	health              string
+	agentCreationTime   time.Time
+	registrationSuccess bool
+	registrationHash    uint64
+}
+
+type agentStatus struct {
+	cachePopulated bool
+	creationTime   time.Time
 }
 
 type addressHealth struct {
@@ -146,111 +166,125 @@ type svcRegistration struct {
 }
 
 func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var errs error
-	var serviceEndpoints corev1.Endpoints
-
 	if shouldIgnore(req.Namespace, r.DenyK8sNamespacesSet, r.AllowK8sNamespacesSet) {
 		return ctrl.Result{}, nil
 	}
+	k8sService := serviceName{ns: req.Namespace, name: req.Name}
 
-	if r.healthCheckCache == nil {
-		r.healthCheckCache = make(map[string]healthCheckStatus)
-	}
-
-	agents := corev1.PodList{}
-	listOptions := client.ListOptions{
-		Namespace: r.ReleaseNamespace,
-		LabelSelector: labels.SelectorFromSet(map[string]string{
-			"component": "client",
-			"app":       "consul",
-			"release":   r.ReleaseName,
-		}),
-	}
-	if err := r.Client.List(ctx, &agents, &listOptions); err != nil {
-		r.Log.Error(err, "failed to get Consul client agent pods")
+	// Fetch the latest listing of agents.
+	currentAgents, err := r.fetchAgents(ctx)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err := r.populateCache(ctx, req, agents); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Store the latest agent creation time for each HostIP to ensure we trigger events when
-	// agents are restarted.
-	currentAgents := make(map[string]time.Time)
-	for _, agent := range agents.Items {
-		var startTime time.Time
-		for _, container := range agent.Status.ContainerStatuses {
-			if container.Name == "consul" && container.State.Running != nil {
-				startTime = container.State.Running.StartedAt.Time
+	// Detect new and bounced agents.
+	newAgents := map[hostIP]corev1.Pod{}
+	for _, agent := range currentAgents.Items {
+		creationTime := getAgentCreationTime(agent)
+		hostIP := hostIP(agent.Status.HostIP)
+		oldAgentStatus := r.agentCache[hostIP]
+		if hostIP != "" {
+			if !oldAgentStatus.cachePopulated || creationTime.After(oldAgentStatus.creationTime) {
+				newAgents[hostIP] = agent
 			}
 		}
-		if agent.Status.HostIP != "" && startTime.After(currentAgents[agent.Status.HostIP]) {
-			currentAgents[agent.Status.HostIP] = startTime
-		}
 	}
 
-	err := r.Client.Get(ctx, req.NamespacedName, &serviceEndpoints)
+	// Remove any entries that were related to a now-dead agent / node.
+	r.removeStaleAgentCacheEntries(k8sService, currentAgents)
+	// Attempt to get new state from any agents that aren't in the cache already.
+	cacheError := r.populateCache(ctx, req, newAgents)
+	if cacheError != nil {
+		r.Log.Error(cacheError, "An error occurred while populating the cache", err)
+	}
 
-	// If the endpoints object has been deleted (and we get an IsNotFound
-	// error), we need to deregister all instances in Consul for that service.
+	// Get the service endpoints
+	var serviceEndpoints corev1.Endpoints
+	err = r.Client.Get(ctx, req.NamespacedName, &serviceEndpoints)
+	// If the endpoints object has been deleted (and we get an IsNotFound error),
+	// we need to deregister all instances in Consul for that service.
 	if k8serrors.IsNotFound(err) {
 		// Deregister all instances in Consul for this service. The function deregisterServiceOnAgents handles
 		// the case where the Consul service name is different from the Kubernetes service name.
-		if err = r.deregisterServiceOnAgents(ctx, agents, req.Name, req.Namespace, nil, nil); err != nil {
+		if err = r.deregisterServiceOnAgents(ctx, k8sService, r.podCache[k8sService]); err != nil {
 			return ctrl.Result{}, err
 		}
-		delete(r.serviceToNodeAddressMap, fmt.Sprintf("%s/%s", req.Namespace, req.Name))
 		return ctrl.Result{}, nil
 	} else if err != nil {
+		// Make no changes if we failed to fetch the endpoints.
 		r.Log.Error(err, "failed to get Endpoints", "name", req.Name, "ns", req.Namespace)
 		return ctrl.Result{}, err
 	}
 
-	r.Log.Info("retrieved", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
-
-	// endpointAddressMap stores every IP that corresponds to a Pod in the Endpoints object. It is used to compare
-	// against service instances in Consul to deregister them if they are not in the map.
-	endpointAddressMap := map[string]bool{}
-	nodeAddressMap := map[string]string{}
-	deletedAddressMap := map[string]bool{}
-
-	// Register all addresses of this Endpoints object as service instances in Consul.
+	// Handle service registrations and capture any pods that are now "missing" so that they can be deregistered.
+	var registerErrors error
+	missingPods := make(map[podID]bool)
+	seenPods := make(map[podID]bool)
 	for _, subset := range serviceEndpoints.Subsets {
-		// Combine all addresses to a map, with a value indicating whether an address is ready or not.
-		allAddresses := make(map[addressHealth]bool)
-		for _, readyAddress := range subset.Addresses {
-			allAddresses[addressHealth{address: readyAddress, health: api.HealthPassing}] = true
+		allAddresses := make([]addressHealth, 0, 100)
+		for _, address := range subset.Addresses {
+			if address.TargetRef != nil && address.TargetRef.Kind == "Pod" {
+				allAddresses = append(allAddresses, addressHealth{address: address, health: api.HealthPassing})
+				seenPods[podID{name: address.TargetRef.Name, ns: address.TargetRef.Namespace}] = true
+			}
 		}
-
-		for _, notReadyAddress := range subset.NotReadyAddresses {
-			allAddresses[addressHealth{address: notReadyAddress, health: api.HealthCritical}] = true
+		for _, address := range subset.NotReadyAddresses {
+			if address.TargetRef != nil && address.TargetRef.Kind == "Pod" {
+				allAddresses = append(allAddresses, addressHealth{address: address, health: api.HealthCritical})
+				seenPods[podID{name: address.TargetRef.Name, ns: address.TargetRef.Namespace}] = true
+			}
 		}
-
-		errs = r.reconcileAddresses(ctx, allAddresses, currentAgents, serviceEndpoints, endpointAddressMap, nodeAddressMap)
+		missingPods, err = r.updateHealthAndRegistrations(ctx, serviceEndpoints, allAddresses)
+		if err != nil {
+			// Do not perform service deregistrations if there was an error performing registrations.
+			// This will prevent accidental k8s API query failures from triggering bad behavior.
+			registerErrors = multierror.Append(registerErrors, err)
+		}
 	}
 
 	// Only deregister services if no errors were encountered, since otherwise we could be stuck in an unknown state and may incorrectly
 	// remove services. This is possible if fetching a pod via the k8s API fails, since we wouldn't know enough metadata to make a decision.
-	if errs == nil {
-		for instanceName := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)] {
-			if _, ok := nodeAddressMap[instanceName]; !ok {
-				deletedAddressMap[r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", serviceEndpoints.Namespace, serviceEndpoints.Name)][instanceName]] = true
-			}
-		}
-		// Compare service instances in Consul with addresses in Endpoints. If an address is not in Endpoints, deregister
-		// from Consul. This uses endpointAddressMap which is populated with the addresses in the Endpoints object during
-		// the registration codepath.
-		if err = r.deregisterServiceOnAgents(ctx, agents, serviceEndpoints.Name, serviceEndpoints.Namespace, endpointAddressMap, deletedAddressMap); err != nil {
-			r.Log.Error(err, "failed to deregister endpoints on all agents", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
-			errs = multierror.Append(errs, err)
+	if err != nil || registerErrors != nil {
+		return ctrl.Result{}, err
+	}
+
+	toDeregister := make(map[podID]podStatus)
+	for podID, pod := range r.podCache[k8sService] {
+		_, seen := seenPods[podID]
+		_, missing := missingPods[podID]
+		// If we didn't encounter the pod in the current service endpoint listing
+		// or if we explicitly got a 404 when fetching the pod from k8s, then it should be deregistered.
+		if !seen || missing {
+			toDeregister[podID] = pod
 		}
 	}
 
-	return ctrl.Result{}, errs
+	// Compare service instances in Consul with addresses in Endpoints. If an address is not in Endpoints, deregister
+	// from Consul. This uses endpointAddressMap which is populated with the addresses in the Endpoints object during
+	// the registration codepath.
+	if err = r.deregisterServiceOnAgents(ctx, k8sService, toDeregister); err != nil {
+		r.Log.Error(err, "failed to deregister endpoints on all agents", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
+		return ctrl.Result{}, err
+	}
+
+	// Save the new agent statuses if we were able to successfully reconcile differences.
+	r.agentCache = make(map[hostIP]agentStatus)
+	for _, agent := range currentAgents.Items {
+		hostIP := hostIP(agent.Status.HostIP)
+		if hostIP != "" {
+			r.agentCache[hostIP] = agentStatus{
+				cachePopulated: r.agentCache[hostIP].cachePopulated,
+				creationTime:   getAgentCreationTime(agent),
+			}
+		}
+	}
+
+	// Return the cache error at the very end. This ensures that if there was some issue fetching info from agents,
+	// then we will come back and attempt to deregister services.
+	return ctrl.Result{}, cacheError
 }
 
-func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddresses map[addressHealth]bool, currentAgents map[string]time.Time, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
+func (r *EndpointsController) updateHealthAndRegistrations(ctx context.Context, serviceEndpoints corev1.Endpoints, allAddresses []addressHealth) (map[podID]bool, error) {
 	var errs error
 	concurrentCalls := getConcurrentCalls()
 	if concurrentCalls > len(allAddresses) {
@@ -258,47 +292,184 @@ func (r *EndpointsController) reconcileAddresses(ctx context.Context, allAddress
 	}
 
 	// Wait for all items to complete before returning to preserve the original flow of data.
-	r.Log.Info("Queuing up reconcileAddress", "tasks", len(allAddresses), "goroutines", concurrentCalls)
+	r.Log.Info("Queuing up updateHealthAndRegistrations",
+		"tasks", len(allAddresses), "goroutines", concurrentCalls, "svc", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
 	var waiter sync.WaitGroup
 	waiter.Add(concurrentCalls)
 
 	// Queue the agent calls.
+	allMissingPods := make(map[podID]bool)
 	var hadError atomic.Bool
 	addressHealthChan := make(chan addressHealth)
 	for i := 0; i < concurrentCalls; i++ {
 		go func() {
 			defer waiter.Done()
 			for addrHealth := range addressHealthChan {
-				if err := r.reconcileAddress(ctx, addrHealth, currentAgents, serviceEndpoints, endpointAddressMap, nodeAddressMap); err != nil {
-					r.Log.Error(err, "error while reconciling address", "address", addrHealth.address)
+				podID := podID{name: addrHealth.address.TargetRef.Name, ns: addrHealth.address.TargetRef.Namespace}
+				if missingPod, err := r.updateHealthAndRegistration(ctx, podID, addrHealth.health, serviceEndpoints); err != nil {
+					r.Log.Error(err, "error while reconciling address", "address", addrHealth.address, "pod", podID)
 					hadError.Store(true)
+				} else if missingPod {
+					allMissingPods[podID] = true
 				}
 			}
 		}()
 	}
 
-	for health := range allAddresses {
+	for _, health := range allAddresses {
 		addressHealthChan <- health
 	}
 	close(addressHealthChan)
 
 	waiter.Wait()
-	r.Log.Info("Done with all tasks for reconcileAddress", "tasks", len(allAddresses))
+	r.Log.Info("Done with all tasks for updateHealthAndRegistrations", "tasks", len(allAddresses))
 	if hadError.Load() {
-		errs = fmt.Errorf("some deregisterServiceOnAgents tasks were not successful")
+		errs = fmt.Errorf("some updateHealthAndRegistrations tasks were not successful")
 	}
-	return errs
+	return allMissingPods, errs
 }
 
-func (r *EndpointsController) reconcileAddress(ctx context.Context, addressHealth addressHealth, currentAgents map[string]time.Time, serviceEndpoints corev1.Endpoints, endpointAddressMap map[string]bool, nodeAddressMap map[string]string) error {
-	var errs error
-	if addressHealth.address.TargetRef != nil && addressHealth.address.TargetRef.Kind == "Pod" {
-		if err := r.registerServicesAndHealthCheck(ctx, serviceEndpoints, addressHealth, currentAgents, endpointAddressMap, nodeAddressMap); err != nil {
-			r.Log.Error(err, "failed to register services or health check", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
-			errs = multierror.Append(errs, err)
+func (r *EndpointsController) updateHealthAndRegistration(
+	ctx context.Context,
+	podID podID,
+	newHealth string,
+	serviceEndpoints corev1.Endpoints,
+) (missing bool, err error) {
+	// Get pod associated with this address.
+	var pod corev1.Pod
+	objectKey := types.NamespacedName{Name: podID.name, Namespace: podID.ns}
+	if err := r.Client.Get(ctx, objectKey, &pod); err != nil {
+		if k8serrors.IsNotFound(err) {
+			// If the pod doesn't exist, then we won't put an entry in the endpointAddressMap
+			// and it will be deregistered. The rest of this flow is not necessary.
+			return true, nil
 		}
+		r.Log.Error(err, "failed to get pod", "pod", podID)
+		return false, err
 	}
-	return errs
+	// Do nothing if we don't manage the pod with connect-inject.
+	if !hasBeenInjected(pod) {
+		return false, nil
+	}
+	var managedByEndpointsController bool
+	if raw, ok := pod.Labels[keyManagedBy]; ok && raw == managedByValue {
+		managedByEndpointsController = true
+	}
+
+	// Get information from the pod to create service instance registrations.
+	serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
+	if err != nil {
+		r.Log.Error(err, "failed to create service registrations for endpoints",
+			"name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace, "pod", podID)
+		return false, err
+	}
+	registration := svcRegistration{
+		id:      serviceRegistration.ID,
+		proxy:   serviceRegistration.Proxy,
+		connect: serviceRegistration.Connect,
+	}
+	svcRegHash, err := hashstructure.Hash(registration, hashstructure.FormatV2, nil)
+	if err != nil {
+		r.Log.Error(err, "failed to hash service registration", "name", serviceRegistration.Name)
+		return false, err
+	}
+
+	// For pods managed by this controller, create and register the service instance.
+	serviceName := serviceName{name: serviceEndpoints.Name, ns: serviceEndpoints.Namespace}
+	serviceID := getServiceID(pod, serviceEndpoints)
+	healthCheckID := getConsulHealthCheckID(pod, serviceID)
+	podHostIP := hostIP(pod.Status.HostIP)
+	if podHostIP == "" {
+		return false, fmt.Errorf("pod had an unexpected missing host IP: %v", podID)
+	}
+
+	r.stateMutex.Lock()
+	agentStatus := r.agentCache[hostIP(pod.Status.HostIP)]
+	oldStatus, found := r.podCache[serviceName][podID]
+	r.stateMutex.Unlock()
+
+	shouldUpdateRegistration := (
+	// The instance was not found
+	!found ||
+		// Or a previous registration was not successful
+		!oldStatus.registrationSuccess ||
+		// Or the service registration changed
+		oldStatus.registrationHash != svcRegHash ||
+		// Or the agent was restarted
+		!oldStatus.agentCreationTime.Equal(agentStatus.creationTime))
+	shouldUpdateHealth := (shouldUpdateRegistration ||
+		// The health status changed
+		oldStatus.health != newHealth)
+
+	// Create client for Consul agent local to the pod.
+	client, err := r.remoteConsulClient(pod.Status.HostIP, r.consulNamespace(pod.Namespace))
+	if err != nil {
+		r.Log.Error(err, "failed to create a new Consul client", "address", podHostIP)
+		return false, err
+	}
+
+	newStatus := podStatus{
+		serviceName:         serviceName,
+		podID:               podID,
+		hostIP:              podHostIP,
+		agentCreationTime:   agentStatus.creationTime,
+		registrationHash:    svcRegHash,
+		registrationSuccess: true, // the registration should be considered successful unless managed by an endpoints controller.
+		health:              "",   // set this to empty until we save the health check successfully.
+	}
+	if shouldUpdateRegistration && managedByEndpointsController {
+		newStatus.registrationSuccess = false
+
+		// Register the service instance with the local agent.
+		// Note: the order of how we register services is important,
+		// and the connect-proxy service should come after the "main" service
+		// because its alias health check depends on the main service existing.
+		r.Log.Info("registering service with Consul", "name", serviceRegistration.Name,
+			"id", serviceRegistration.ID, "agentIP", podHostIP)
+		err = client.Agent().ServiceRegister(serviceRegistration)
+		if err != nil {
+			r.Log.Error(err, "failed to register service", "name", serviceRegistration.Name)
+			return false, err
+		}
+
+		// Add an entry into our cache since we've done a partial service registration.
+		r.stateMutex.Lock()
+		r.trackPod(newStatus)
+		r.stateMutex.Unlock()
+
+		// Register the proxy service instance with the local agent.
+		r.Log.Info("registering proxy service with Consul", "name", proxyServiceRegistration.Name)
+		err = client.Agent().ServiceRegister(proxyServiceRegistration)
+		if err != nil {
+			r.Log.Error(err, "failed to register proxy service", "name", proxyServiceRegistration.Name)
+			return false, err
+		}
+
+		// Save the successful registration
+		r.stateMutex.Lock()
+		newStatus.registrationSuccess = true
+		r.trackPod(newStatus)
+		r.stateMutex.Unlock()
+	}
+
+	// Update the service TTL health check for both legacy services and services managed by endpoints
+	// controller. The proxy health checks are registered separately by endpoints controller and
+	// lifecycle sidecar for legacy services. Here, we always update the health check for legacy and
+	// newer services idempotently since the service health check is not added as part of the service
+	// registration.
+	if shouldUpdateHealth || os.Getenv("INJECT_FORCE_HEALTH_UPDATES") == "TRUE" {
+		err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, newHealth)
+		if err != nil {
+			r.Log.Error(err, "failed to update health check status for service", "serviceID", serviceID)
+			return false, err
+		}
+		r.stateMutex.Lock()
+		newStatus.health = newHealth
+		r.trackPod(newStatus)
+		r.stateMutex.Unlock()
+	}
+
+	return false, nil
 }
 
 func (r *EndpointsController) Logger(name types.NamespacedName) logr.Logger {
@@ -313,155 +484,6 @@ func (r *EndpointsController) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.requestsForRunningAgentPods),
 			builder.WithPredicates(predicate.NewPredicateFuncs(r.filterAgentPods)),
 		).Complete(r)
-}
-
-// registerServicesAndHealthCheck creates Consul registrations for the service and proxy and register them with Consul.
-// It also upserts a Kubernetes health check for the service based on whether the endpoint address is ready.
-func (r *EndpointsController) registerServicesAndHealthCheck(
-	ctx context.Context,
-	serviceEndpoints corev1.Endpoints,
-	addressHealth addressHealth,
-	currentAgents map[string]time.Time,
-	endpointAddressMap map[string]bool,
-	nodeAddressMap map[string]string,
-) error {
-	// Get pod associated with this address.
-	var pod corev1.Pod
-
-	objectKey := types.NamespacedName{Name: addressHealth.address.TargetRef.Name, Namespace: addressHealth.address.TargetRef.Namespace}
-	if err := r.Client.Get(ctx, objectKey, &pod); err != nil {
-		if k8serrors.IsNotFound(err) {
-			// If the pod doesn't exist, then we won't put an entry in the endpointAddressMap
-			// and it will be deregistered. The rest of this flow is not necessary.
-			return nil
-		}
-		r.Log.Error(err, "failed to get pod", "name", addressHealth.address.TargetRef.Name)
-		return err
-	}
-	podID := fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
-	podHostIP := pod.Status.HostIP
-
-	if hasBeenInjected(pod) {
-		r.nodeMapMutex.Lock()
-		// Build the endpointAddressMap up for deregistering service instances later.
-		endpointAddressMap[pod.Status.PodIP] = true
-		var managedByEndpointsController bool
-		if raw, ok := pod.Labels[keyManagedBy]; ok && raw == managedByValue {
-			managedByEndpointsController = true
-		}
-		if managedByEndpointsController {
-			nodeAddressMap[podID] = podHostIP
-		}
-		r.nodeMapMutex.Unlock()
-
-		// Create client for Consul agent local to the pod.
-		client, err := r.remoteConsulClient(podHostIP, r.consulNamespace(pod.Namespace))
-		if err != nil {
-			r.Log.Error(err, "failed to create a new Consul client", "address", podHostIP)
-			return err
-		}
-		// Get information from the pod to create service instance registrations.
-		serviceRegistration, proxyServiceRegistration, err := r.createServiceRegistrations(pod, serviceEndpoints)
-		if err != nil {
-			r.Log.Error(err, "failed to create service registrations for endpoints", "name", serviceEndpoints.Name, "ns", serviceEndpoints.Namespace)
-			return err
-		}
-		registration := svcRegistration{
-			id:      serviceRegistration.ID,
-			proxy:   serviceRegistration.Proxy,
-			connect: serviceRegistration.Connect,
-		}
-		svcRegHash, err := hashstructure.Hash(registration, hashstructure.FormatV2, nil)
-		if err != nil {
-			r.Log.Error(err, "failed to hash service registration", "name", serviceRegistration.Name)
-			return err
-		}
-
-		// For pods managed by this controller, create and register the service instance.
-		serviceID := getServiceID(pod, serviceEndpoints)
-		healthCheckID := getConsulHealthCheckID(pod, serviceID)
-
-		r.nodeMapMutex.Lock()
-		hash, found := r.serviceInstanceMap[podID]
-		oldHealth := r.healthCheckCache[healthCheckID]
-
-		shouldUpdateRegistration := (!found || hash != svcRegHash ||
-			// The agent was restarted
-			!currentAgents[podHostIP].Equal(oldHealth.agentCreationTime))
-		shouldUpdateHealth := (shouldUpdateRegistration ||
-			// The health status changed
-			oldHealth.status != addressHealth.health)
-
-		// Clear out the cache if we are going to attempt a modification,
-		// so that if an error occurs, subsequent passes will attempt
-		// to be resolved.
-		if shouldUpdateHealth {
-			delete(r.healthCheckCache, healthCheckID)
-		}
-		if shouldUpdateRegistration {
-			delete(r.serviceInstanceMap, podID)
-		}
-		r.nodeMapMutex.Unlock()
-
-		if shouldUpdateRegistration && managedByEndpointsController {
-			// Register the service instance with the local agent.
-			// Note: the order of how we register services is important,
-			// and the connect-proxy service should come after the "main" service
-			// because its alias health check depends on the main service existing.
-			r.Log.Info("registering service with Consul", "name", serviceRegistration.Name,
-				"id", serviceRegistration.ID, "agentIP", podHostIP)
-			err = client.Agent().ServiceRegister(serviceRegistration)
-			if err != nil {
-				r.Log.Error(err, "failed to register service", "name", serviceRegistration.Name)
-				return err
-			}
-
-			// Add an entry into our cache since we've done a partial service registration.
-			r.nodeMapMutex.Lock()
-			r.trackServiceAddress(
-				serviceEndpoints.Namespace, serviceEndpoints.Name,
-				pod.Namespace, pod.Name,
-				podHostIP)
-			r.nodeMapMutex.Unlock()
-
-			// Register the proxy service instance with the local agent.
-			r.Log.Info("registering proxy service with Consul", "name", proxyServiceRegistration.Name)
-			err = client.Agent().ServiceRegister(proxyServiceRegistration)
-			if err != nil {
-				r.Log.Error(err, "failed to register proxy service", "name", proxyServiceRegistration.Name)
-				return err
-			}
-
-			r.nodeMapMutex.Lock()
-			r.serviceInstanceMap[podID] = svcRegHash
-			r.nodeMapMutex.Unlock()
-		}
-
-		// Update the service TTL health check for both legacy services and services managed by endpoints
-		// controller. The proxy health checks are registered separately by endpoints controller and
-		// lifecycle sidecar for legacy services. Here, we always update the health check for legacy and
-		// newer services idempotently since the service health check is not added as part of the service
-		// registration.
-		if shouldUpdateHealth || os.Getenv("INJECT_FORCE_HEALTH_UPDATES") == "TRUE" {
-			err = r.upsertHealthCheck(pod, client, serviceID, healthCheckID, addressHealth.health)
-			if err != nil {
-				r.nodeMapMutex.Lock()
-				delete(r.serviceInstanceMap, podID)
-				delete(r.healthCheckCache, healthCheckID)
-				r.nodeMapMutex.Unlock()
-				r.Log.Error(err, "failed to update health check status for service", "serviceID", serviceID)
-				return err
-			}
-			r.nodeMapMutex.Lock()
-			r.healthCheckCache[healthCheckID] = healthCheckStatus{
-				agentCreationTime: currentAgents[podHostIP],
-				status:            addressHealth.health,
-			}
-			r.nodeMapMutex.Unlock()
-		}
-	}
-
-	return nil
 }
 
 // getServiceCheck will return the health check for this pod and service if it exists.
@@ -548,6 +570,7 @@ func (r *EndpointsController) upsertHealthCheck(pod corev1.Pod, client *api.Clie
 	return nil
 }
 
+// TODO this looks odd. Is it correct?
 func getServiceName(pod corev1.Pod, serviceEndpoints corev1.Endpoints) string {
 	serviceName := serviceEndpoints.Name
 	if serviceNameFromAnnotation, ok := pod.Annotations[annotationService]; ok && serviceNameFromAnnotation != "" {
@@ -851,130 +874,74 @@ func getHealthCheckStatusReason(healthCheckStatus, podName, podNamespace string)
 // The argument endpointsAddressesMap decides whether to deregister *all* service instances or selectively deregister
 // them only if they are not in endpointsAddressesMap. If the map is nil, it will deregister all instances. If the map
 // has addresses, it will only deregister instances not in the map.
-func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, agents corev1.PodList, k8sSvcName, k8sSvcNamespace string, endpointsAddressesMap, deletedAddressMap map[string]bool) error {
-	consulNS := r.consulNamespace(k8sSvcNamespace)
-	agentAddresses := map[string]bool{}
-	for _, pod := range agents.Items {
-		agentAddresses[pod.Status.HostIP] = true
+func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8sSvc serviceName, toDeregister map[podID]podStatus) error {
+	consulNS := r.consulNamespace(k8sSvc.ns)
+
+	// Control the number of concurrent calls that can be made to agents
+	concurrentCalls := getConcurrentCalls()
+	if concurrentCalls > len(toDeregister) {
+		concurrentCalls = len(toDeregister)
 	}
 
-	if endpointsAddressesMap == nil {
-		// Control the number of concurrent calls that can be made to agents
-		concurrentCalls := getConcurrentCalls()
-		if concurrentCalls > len(r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)]) {
-			concurrentCalls = len(r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)])
-		}
+	// Wait for all items to complete
+	r.Log.Info("Queuing up deregisterServiceOnAgents", "tasks", len(toDeregister), "goroutines", concurrentCalls)
+	var waiter sync.WaitGroup
+	waiter.Add(concurrentCalls)
 
-		// Wait for all items to complete before returning to preserve the original flow of data.
-		r.Log.Info("Queuing up deregisterServiceOnAgents for nil endpoints", "tasks", len(agents.Items), "goroutines", concurrentCalls)
-		var waiter sync.WaitGroup
-		waiter.Add(concurrentCalls)
-
-		// Queue the agent calls
-		var hadError atomic.Bool
-		nodeChan := make(chan string)
-		for i := 0; i < concurrentCalls; i++ {
-			go func() {
-				defer waiter.Done()
-				for nodeAddress := range nodeChan {
-					if err := deleteService(r, nodeAddress, agentAddresses, k8sSvcName, k8sSvcNamespace, consulNS); err != nil {
-						r.Log.Error(err, "error while contacting agent", "agentIP", nodeAddress)
-						hadError.Store(true)
-					}
-				}
-			}()
-		}
-		nodes := map[string]bool{}
-		for _, nodeAddress := range r.serviceToNodeAddressMap[fmt.Sprintf("%s/%s", k8sSvcNamespace, k8sSvcName)] {
-			nodes[nodeAddress] = true
-		}
-
-		for nodeAddress := range nodes {
-			nodeChan <- nodeAddress
-		}
-		close(nodeChan)
-
-		// Wait for all responses
-		waiter.Wait()
-		r.Log.Info("Done with all tasks for deregisterServiceOnAgents", "tasks", len(agents.Items))
-		if hadError.Load() {
-			return fmt.Errorf("some deregisterServiceOnAgents tasks were not successful")
-		}
-	} else {
-		for nodeAddress := range deletedAddressMap {
-			if _, ok := agentAddresses[nodeAddress]; !ok {
-				continue
-			}
-			client, err := r.remoteConsulClient(nodeAddress, consulNS)
-			if err != nil {
-				r.Log.Error(err, "failed to create a new Consul client", "address", nodeAddress)
-				return err
-			}
-
-			svcs, err := serviceInstancesForK8SServiceNameAndNamespace(k8sSvcName, k8sSvcNamespace, client)
-			if err != nil {
-				r.Log.Error(err, "failed to get service instances", "name", k8sSvcName)
-				return err
-			}
-			for svcID, svc := range svcs {
-				var serviceDeregistered bool
-				if _, ok := endpointsAddressesMap[svc.Address]; !ok {
-					// If the service address is not in the Endpoints addresses, deregister it.
-					r.Log.Info("deregistering service from consul", "svc", svcID)
-					if err = client.Agent().ServiceDeregister(svcID); err != nil {
-						r.Log.Error(err, "failed to deregister service instance", "id", svcID)
-						return err
-					}
-					delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyPodName]))
-					serviceDeregistered = true
-				}
-
-				if r.AuthMethod != "" && serviceDeregistered {
-					r.Log.Info("reconciling ACL tokens for service", "svc", svc.Service)
-					err = r.deleteACLTokensForServiceInstance(svc.Service, k8sSvcNamespace, svc.Meta[MetaKeyPodName])
-					if err != nil {
-						r.Log.Error(err, "failed to reconcile ACL tokens for service", "svc", svc.Service)
-						return err
-					}
+	// Queue the agent calls
+	var hadError atomic.Bool
+	podChan := make(chan podStatus)
+	for i := 0; i < concurrentCalls; i++ {
+		go func() {
+			defer waiter.Done()
+			for pod := range podChan {
+				if err := deleteServiceInstance(r, pod, consulNS); err != nil {
+					r.Log.Error(err, "error while contacting agent", "agentIP", pod.hostIP)
+					hadError.Store(true)
 				}
 			}
-
-		}
+		}()
 	}
+	for _, pod := range toDeregister {
+		podChan <- pod
+	}
+	close(podChan)
 
+	// Wait for all responses
+	waiter.Wait()
+	r.Log.Info("Done with all tasks for deregisterServiceOnAgents", "tasks", len(toDeregister))
+	if hadError.Load() {
+		return fmt.Errorf("some deregisterServiceOnAgents tasks were not successful")
+	}
 	return nil
 }
 
-func deleteService(r *EndpointsController, nodeAddress string, agentAddresses map[string]bool, k8sSvcName string, k8sSvcNamespace string, consulNS string) error {
-	if _, ok := agentAddresses[nodeAddress]; !ok {
-		return nil
-	}
-	client, err := r.remoteConsulClient(nodeAddress, consulNS)
+func deleteServiceInstance(r *EndpointsController, podStatus podStatus, consulNS string) error {
+	client, err := r.remoteConsulClient(string(podStatus.hostIP), consulNS)
 	if err != nil {
-		r.Log.Error(err, "failed to create a new Consul client", "address", nodeAddress)
+		r.Log.Error(err, "failed to create a new Consul client", "address", podStatus.hostIP)
 		return err
 	}
 
-	svcs, err := serviceInstancesForK8SServiceNameAndNamespace(k8sSvcName, k8sSvcNamespace, client)
+	svcs, err := serviceInstancesForK8SServiceNameAndNamespace(podStatus.serviceName.name, podStatus.serviceName.ns, podStatus.podID.name, client)
 	if err != nil {
-		r.Log.Error(err, "failed to get service instances", "name", k8sSvcName)
+		r.Log.Error(err, "failed to get service instances", "name", podStatus.serviceName, "hostIP", podStatus.hostIP)
 		return err
 	}
 	for svcID, svc := range svcs {
-		var serviceDeregistered bool
 		r.Log.Info("deregistering service from consul", "svc", svcID)
 		if err = client.Agent().ServiceDeregister(svcID); err != nil {
 			r.Log.Error(err, "failed to deregister service instance", "id", svcID)
 			return err
 		}
-		r.nodeMapMutex.Lock()
-		delete(r.serviceInstanceMap, fmt.Sprintf("%s/%s", k8sSvcNamespace, svc.Meta[MetaKeyPodName]))
-		r.nodeMapMutex.Unlock()
-		serviceDeregistered = true
+		r.stateMutex.Lock()
+		r.untrackPod(podStatus)
+		r.stateMutex.Unlock()
 
-		if r.AuthMethod != "" && serviceDeregistered {
+		// TODO: This is leaky. It was this way in the old controller for some reason.
+		if r.AuthMethod != "" {
 			r.Log.Info("reconciling ACL tokens for service", "svc", svc.Service)
-			err = r.deleteACLTokensForServiceInstance(svc.Service, k8sSvcNamespace, svc.Meta[MetaKeyPodName])
+			err = r.deleteACLTokensForServiceInstance(svc.Service, podStatus.serviceName.ns, svc.Meta[MetaKeyPodName])
 			if err != nil {
 				r.Log.Error(err, "failed to reconcile ACL tokens for service", "svc", svc.Service)
 				return err
@@ -984,77 +951,66 @@ func deleteService(r *EndpointsController, nodeAddress string, agentAddresses ma
 	return nil
 }
 
-func (r *EndpointsController) populateCache(ctx context.Context, req ctrl.Request, agents corev1.PodList) error {
-
-	// We need to remove any agents from the uncached map that don't exist anymore, so that we don't try to contact them.
-	// This doesn't happen on the first run.
-	if r.uncachedAgents != nil {
-		currentAgents := map[string]bool{}
-		for _, agent := range agents.Items {
-			if agent.Status.HostIP != "" {
-				currentAgents[agent.Status.HostIP] = true
-			}
-		}
-		for agent := range r.uncachedAgents {
-			if _, ok := currentAgents[agent]; !ok {
-				delete(r.uncachedAgents, agent)
-			}
-		}
+func (r *EndpointsController) populateCache(ctx context.Context, req ctrl.Request, newAgents map[hostIP]corev1.Pod) error {
+	if r.agentCache == nil {
+		r.agentCache = map[hostIP]agentStatus{}
+	}
+	if r.podCache == nil {
+		r.podCache = map[serviceName]map[podID]podStatus{}
+	}
+	// Stop if there's no new data to fetch.
+	if len(newAgents) == 0 {
+		return nil
 	}
 
-	// First-run initialization
-	if r.serviceInstanceMap == nil {
-		r.serviceInstanceMap = map[string]uint64{}
-		r.serviceToNodeAddressMap = map[string]map[string]string{}
-		r.uncachedAgents = map[string]bool{}
-		// During the first run, we mark all agents as being uncached.
-		for _, agent := range agents.Items {
-			if agent.Status.HostIP != "" {
-				r.uncachedAgents[agent.Status.HostIP] = true
-			}
-		}
-	}
-
-	// Control the number of concurrent calls that can be made to agents
 	concurrentCalls := getConcurrentCalls()
-	if concurrentCalls > len(r.uncachedAgents) {
-		concurrentCalls = len(r.uncachedAgents)
+	if concurrentCalls > len(newAgents) {
+		concurrentCalls = len(newAgents)
 	}
 
-	// Wait for all items to complete before returning to preserve the original flow of data.
-	r.Log.Info("Queuing up populateServiceToNodeMap", "tasks", len(agents.Items), "goroutines", concurrentCalls)
+	r.Log.Info("Queuing up populateCache", "tasks", len(newAgents), "goroutines", concurrentCalls)
+	// Wait for all goroutines to complete before returning.
 	var waiter sync.WaitGroup
 	waiter.Add(concurrentCalls)
 
 	// Queue the agent calls.
 	var hadError atomic.Bool
-	agentChan := make(chan string)
+	agentChan := make(chan corev1.Pod)
 	for i := 0; i < concurrentCalls; i++ {
 		go func() {
 			defer waiter.Done()
-			for agentHostIP := range agentChan {
-				if err := r.populateServiceToNodeMap(agentHostIP, r.consulNamespace(req.Namespace)); err != nil {
-					r.Log.Error(err, "error while contacting agent for cache population", "agentIP", agentHostIP)
-					hadError.Store(true)
-				} else {
-					r.nodeMapMutex.Lock()
-					delete(r.uncachedAgents, agentHostIP)
-					r.nodeMapMutex.Unlock()
+			for agent := range agentChan {
+				pods, err := r.getAgentDataForCache(agent, r.consulNamespace(req.Namespace))
+				r.stateMutex.Lock()
+				{
+					r.agentCache[hostIP(agent.Status.HostIP)] = agentStatus{
+						cachePopulated: err == nil,
+						creationTime:   getAgentCreationTime(agent),
+					}
+					if err != nil {
+						r.Log.Error(err, "error while contacting agent for cache population", "agentIP", agent.Status.HostIP)
+						hadError.Store(true)
+					} else {
+						for _, i := range pods {
+							r.trackPod(i)
+						}
+					}
 				}
+				r.stateMutex.Unlock()
 			}
 		}()
 	}
 
-	for agentHostIP := range r.uncachedAgents {
-		agentChan <- agentHostIP
+	for _, agent := range newAgents {
+		agentChan <- agent
 	}
 	close(agentChan)
 
 	// Wait for all responses
 	waiter.Wait()
-	r.Log.Info("Done with all tasks for populateServiceToNodeMap", "tasks", len(agents.Items))
+	r.Log.Info("Done with all tasks for populateCache", "tasks", len(newAgents))
 	if hadError.Load() {
-		return fmt.Errorf("some populateServiceToNodeMap tasks were not successful")
+		return fmt.Errorf("some populateCache tasks were not successful")
 	}
 	return nil
 }
@@ -1124,10 +1080,14 @@ func getTokenMetaFromDescription(description string) (map[string]string, error) 
 
 // serviceInstancesForK8SServiceNameAndNamespace calls Consul's ServicesWithFilter to get the list
 // of services instances that have the provided k8sServiceName and k8sServiceNamespace in their metadata.
-func serviceInstancesForK8SServiceNameAndNamespace(k8sServiceName, k8sServiceNamespace string, client *api.Client) (map[string]*api.AgentService, error) {
+func serviceInstancesForK8SServiceNameAndNamespace(k8sServiceName, k8sServiceNamespace, podName string, client *api.Client) (map[string]*api.AgentService, error) {
 	return client.Agent().ServicesWithFilter(
-		fmt.Sprintf(`Meta[%q] == %q and Meta[%q] == %q and Meta[%q] == %q`,
-			MetaKeyKubeServiceName, k8sServiceName, MetaKeyKubeNS, k8sServiceNamespace, MetaKeyManagedBy, managedByValue))
+		fmt.Sprintf(`Meta[%q] == %q and Meta[%q] == %q and Meta[%q] == %q and Meta[%q] == %q`,
+			MetaKeyKubeServiceName, k8sServiceName,
+			MetaKeyKubeNS, k8sServiceNamespace,
+			MetaKeyManagedBy, managedByValue,
+			MetaKeyPodName, podName,
+		))
 }
 
 // processUpstreams reads the list of upstreams from the Pod annotation and converts them into a list of api.Upstream
@@ -1332,33 +1292,18 @@ func (r *EndpointsController) consulNamespace(namespace string) string {
 	return namespaces.ConsulNamespace(namespace, r.EnableConsulNamespaces, r.ConsulDestinationNamespace, r.EnableNSMirroring, r.NSMirroringPrefix)
 }
 
-func (r *EndpointsController) populateServiceToNodeMap(agentHostIP string, consulNS string) error {
-	consulClient, err := r.remoteConsulClient(agentHostIP, consulNS)
+func (r *EndpointsController) getAgentDataForCache(agent corev1.Pod, consulNS string) ([]podStatus, error) {
+	consulClient, err := r.remoteConsulClient(agent.Status.HostIP, consulNS)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	svcs, err := consulClient.Agent().Services()
 	if err != nil {
-		return err
-	}
-	nodeName, err := consulClient.Agent().NodeName()
-	if err != nil {
-		return err
-	}
-	node, _, err := r.ConsulClient.Catalog().Node(nodeName, nil)
-	if err != nil {
-		r.Log.Error(err, "failed getting consul node", "name", nodeName)
-		return err
+		return nil, err
 	}
 
-	r.nodeMapMutex.Lock()
-	defer r.nodeMapMutex.Unlock()
+	instances := make([]podStatus, 0, len(svcs))
 	for _, svc := range svcs {
-		r.trackServiceAddress(
-			svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyKubeServiceName],
-			svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyPodName],
-			node.Node.Address,
-		)
 		registration := svcRegistration{
 			id:      svc.ID,
 			proxy:   svc.Proxy,
@@ -1367,21 +1312,71 @@ func (r *EndpointsController) populateServiceToNodeMap(agentHostIP string, consu
 		svcRegHash, err := hashstructure.Hash(registration, hashstructure.FormatV2, nil)
 		if err != nil {
 			r.Log.Error(err, "failed to hash service registration", "name", svc.Service)
-			return err
+			return nil, err
 		}
-		serviceInstanceKey := fmt.Sprintf("%s/%s", svc.Meta[MetaKeyKubeNS], svc.Meta[MetaKeyPodName])
-		r.serviceInstanceMap[serviceInstanceKey] = svcRegHash
+		instances = append(instances, podStatus{
+			serviceName:         serviceName{ns: svc.Meta[MetaKeyKubeNS], name: svc.Meta[MetaKeyKubeServiceName]},
+			podID:               podID{ns: svc.Meta[MetaKeyKubeNS], name: svc.Meta[MetaKeyPodName]},
+			hostIP:              hostIP(agent.Status.HostIP),
+			agentCreationTime:   getAgentCreationTime(agent),
+			registrationSuccess: true,
+			registrationHash:    svcRegHash,
+			health:              "", // Leave this empty for now so that an update is forced.
+		})
 	}
-	return nil
+	return instances, err
 }
 
-func (r *EndpointsController) trackServiceAddress(k8sSvcNS, k8sSvcName, podNS, podName, podHostIP string) {
-	serviceKey := fmt.Sprintf("%s/%s", k8sSvcNS, k8sSvcName)
-	podID := fmt.Sprintf("%s/%s", podNS, podName)
-	if r.serviceToNodeAddressMap[serviceKey] == nil {
-		r.serviceToNodeAddressMap[serviceKey] = map[string]string{}
+func (r *EndpointsController) trackPod(instance podStatus) {
+	if r.podCache[instance.serviceName] == nil {
+		r.podCache[instance.serviceName] = make(map[podID]podStatus)
 	}
-	r.serviceToNodeAddressMap[serviceKey][podID] = podHostIP
+	r.podCache[instance.serviceName][instance.podID] = instance
+}
+
+func (r *EndpointsController) untrackPod(instance podStatus) {
+	delete(r.podCache[instance.serviceName], instance.podID)
+}
+
+// Clean out records for old agents / nodes. If they disappeared, then there's nothing we can do, since
+// each agent still syncs its own registrations / deregistrations to the consul servers.
+// On leave, each agent should ideally be deregistering its own services anyway.
+func (r *EndpointsController) removeStaleAgentCacheEntries(svcName serviceName, currentAgents corev1.PodList) {
+	currentIPs := make(map[hostIP]bool)
+	for _, agent := range currentAgents.Items {
+		currentIPs[hostIP(agent.Status.HostIP)] = true
+	}
+	for oldIP := range r.agentCache {
+		if currentIPs[oldIP] {
+			continue
+		}
+		// Delete the old agent and corresponding pods from the cache.
+		r.Log.Info("removing dead agent from cache", "hostIP", oldIP)
+		delete(r.agentCache, oldIP)
+		for podID, status := range r.podCache[svcName] {
+			if status.hostIP == oldIP {
+				r.Log.Info("removing stale pod from cache", "hostIP", oldIP, "pod", podID)
+				delete(r.podCache[svcName], podID)
+			}
+		}
+	}
+}
+
+func (r *EndpointsController) fetchAgents(ctx context.Context) (corev1.PodList, error) {
+	agents := corev1.PodList{}
+	listOptions := client.ListOptions{
+		Namespace: r.ReleaseNamespace,
+		LabelSelector: labels.SelectorFromSet(map[string]string{
+			"component": "client",
+			"app":       "consul",
+			"release":   r.ReleaseName,
+		}),
+	}
+	if err := r.Client.List(ctx, &agents, &listOptions); err != nil {
+		r.Log.Error(err, "failed to get Consul client agent pods")
+		return corev1.PodList{}, err
+	}
+	return agents, nil
 }
 
 // hasBeenInjected checks the value of the status annotation and returns true if the Pod has been injected.
@@ -1392,6 +1387,16 @@ func hasBeenInjected(pod corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+func getAgentCreationTime(agent corev1.Pod) time.Time {
+	var creationTime time.Time
+	for _, container := range agent.Status.ContainerStatuses {
+		if container.Name == "consul" && container.State.Running != nil {
+			creationTime = container.State.Running.StartedAt.Time
+		}
+	}
+	return creationTime
 }
 
 func getConcurrentCalls() int {
