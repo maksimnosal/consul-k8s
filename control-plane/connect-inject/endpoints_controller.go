@@ -877,73 +877,117 @@ func getHealthCheckStatusReason(healthCheckStatus, podName, podNamespace string)
 // them only if they are not in endpointsAddressesMap. If the map is nil, it will deregister all instances. If the map
 // has addresses, it will only deregister instances not in the map.
 func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8sSvc serviceName, toDeregister map[podID]podStatus) error {
+	if len(toDeregister) == 0 {
+		return nil
+	}
+
+	// Group pods by hostIP so that we make fewer calls to agents.
+	groupedDeletes := make(map[hostIP]map[podID]podStatus)
+	for id, pod := range toDeregister {
+		group := groupedDeletes[pod.hostIP]
+		if group == nil {
+			group = make(map[podID]podStatus)
+		}
+		group[id] = pod
+		groupedDeletes[pod.hostIP] = group
+	}
+
 	consulNS := r.consulNamespace(k8sSvc.ns)
 
 	// Control the number of concurrent calls that can be made to agents
 	concurrentCalls := getConcurrentCalls()
-	if concurrentCalls > len(toDeregister) {
-		concurrentCalls = len(toDeregister)
+	if concurrentCalls > len(groupedDeletes) {
+		concurrentCalls = len(groupedDeletes)
+	}
+
+	// Get the tokens so that we can delete them after deregistrations.
+	var err error
+	var tokens []*api.ACLTokenListEntry
+	if r.AuthMethod != "" {
+		tokens, _, err = r.ConsulClient.ACL().TokenList(nil)
+		if err != nil {
+			return fmt.Errorf("failed to get a list of tokens from Consul: %s", err)
+		}
 	}
 
 	// Wait for all items to complete
-	r.Log.Info("Queuing up deregisterServiceOnAgents", "tasks", len(toDeregister), "goroutines", concurrentCalls)
+	r.Log.Info("Queuing up deregisterServiceOnAgents", "tasks", len(groupedDeletes), "goroutines", concurrentCalls)
 	var waiter sync.WaitGroup
 	waiter.Add(concurrentCalls)
 
 	// Queue the agent calls
 	var hadError atomic.Bool
-	podChan := make(chan podStatus)
+	podChan := make(chan map[podID]podStatus)
 	for i := 0; i < concurrentCalls; i++ {
 		go func() {
 			defer waiter.Done()
-			for pod := range podChan {
-				if err := deleteServiceInstance(r, pod, consulNS); err != nil {
-					r.Log.Error(err, "error while contacting agent", "agentIP", pod.hostIP)
+			for pods := range podChan {
+				if err := deleteServiceInstances(r, pods, k8sSvc, consulNS, tokens); err != nil {
+					r.Log.Error(err, "error while contacting agent for deregistration")
 					hadError.Store(true)
 				}
 			}
 		}()
 	}
-	for _, pod := range toDeregister {
-		podChan <- pod
+	for _, pods := range groupedDeletes {
+		if len(pods) > 0 {
+			podChan <- pods
+		}
 	}
 	close(podChan)
 
 	// Wait for all responses
 	waiter.Wait()
-	r.Log.Info("Done with all tasks for deregisterServiceOnAgents", "tasks", len(toDeregister))
+	r.Log.Info("Done with all tasks for deregisterServiceOnAgents", "tasks", len(groupedDeletes))
 	if hadError.Load() {
 		return fmt.Errorf("some deregisterServiceOnAgents tasks were not successful")
 	}
 	return nil
 }
 
-func deleteServiceInstance(r *EndpointsController, podStatus podStatus, consulNS string) error {
-	client, err := r.getAgentClient(podStatus.hostIP, consulNS)
+// deleteServiceInstances deletes all service instances for a single hostIP. It is expected that the pods are correctly
+// grouped prior to this function call.
+func deleteServiceInstances(r *EndpointsController, deletePods map[podID]podStatus, k8sSvc serviceName, consulNS string, tokens []*api.ACLTokenListEntry) error {
+	if len(deletePods) == 0 {
+		return nil
+	}
+	// All pods will share the same hostIP, so just grab the first one.
+	var hostIP hostIP
+	for _, pod := range deletePods {
+		hostIP = pod.hostIP
+	}
+	client, err := r.getAgentClient(hostIP, consulNS)
 	if err != nil {
-		r.Log.Error(err, "failed to get a Consul client", "address", podStatus.hostIP)
+		r.Log.Error(err, "failed to get a Consul client", "address", hostIP)
 		return err
 	}
 
-	svcs, err := serviceInstancesForK8SServiceNameAndNamespace(podStatus.serviceName.name, podStatus.serviceName.ns, podStatus.podID.name, client)
+	// Fetch all services on the agent.
+	svcs, err := serviceInstancesForK8SServiceNameAndNamespace(k8sSvc.name, k8sSvc.ns, client)
 	if err != nil {
-		r.Log.Error(err, "failed to get service instances", "name", podStatus.serviceName, "hostIP", podStatus.hostIP)
+		r.Log.Error(err, "failed to get service instances", "name", k8sSvc.name, "ns", k8sSvc.ns, "hostIP", hostIP)
 		return err
 	}
 	for svcID, svc := range svcs {
+		pod, ok := deletePods[podID{name: svc.Meta[MetaKeyPodName], ns: k8sSvc.ns}]
+		// Only delete services that we explicitly put in our delete listing.
+		if !ok {
+			continue
+		}
+
 		r.Log.Info("deregistering service from consul", "svc", svcID)
 		if err = client.Agent().ServiceDeregister(svcID); err != nil {
 			r.Log.Error(err, "failed to deregister service instance", "id", svcID)
 			return err
 		}
 		r.stateMutex.Lock()
-		r.untrackPod(podStatus)
+		r.untrackPod(pod)
 		r.stateMutex.Unlock()
 
 		// TODO: This is leaky. It was this way in the old controller for some reason.
 		if r.AuthMethod != "" {
 			r.Log.Info("reconciling ACL tokens for service", "svc", svc.Service)
-			err = r.deleteACLTokensForServiceInstance(svc.Service, podStatus.serviceName.ns, svc.Meta[MetaKeyPodName])
+			err = r.deleteACLTokensForServiceInstance(svc.Service, pod.serviceName.ns, svc.Meta[MetaKeyPodName], tokens)
 			if err != nil {
 				r.Log.Error(err, "failed to reconcile ACL tokens for service", "svc", svc.Service)
 				return err
@@ -1027,22 +1071,17 @@ func (r *EndpointsController) populateCache(ctx context.Context, req ctrl.Reques
 // deleteACLTokensForServiceInstance finds the ACL tokens that belongs to the service instance and deletes it from Consul.
 // It will only check for ACL tokens that have been created with the auth method this controller
 // has been configured with and will only delete tokens for the provided podName.
-func (r *EndpointsController) deleteACLTokensForServiceInstance(serviceName, k8sNS, podName string) error {
+func (r *EndpointsController) deleteACLTokensForServiceInstance(serviceName, k8sNS, podName string, tokens []*api.ACLTokenListEntry) error {
 	// Skip if podName is empty.
 	if podName == "" {
 		return nil
 	}
-
-	tokens, _, err := r.ConsulClient.ACL().TokenList(nil)
-	if err != nil {
-		return fmt.Errorf("failed to get a list of tokens from Consul: %s", err)
-	}
-
 	for _, token := range tokens {
 		// Only delete tokens that:
 		// * have been created with the auth method configured for this endpoints controller
 		// * have a single service identity whose service name is the same as 'serviceName'
-		if token.AuthMethod == r.AuthMethod &&
+		if token != nil &&
+			token.AuthMethod == r.AuthMethod &&
 			len(token.ServiceIdentities) == 1 &&
 			token.ServiceIdentities[0].ServiceName == serviceName {
 			tokenMeta, err := getTokenMetaFromDescription(token.Description)
@@ -1068,11 +1107,11 @@ func (r *EndpointsController) deleteACLTokensForServiceInstance(serviceName, k8s
 	return nil
 }
 
+var tokenRE = regexp.MustCompile(`.*({.+})`)
+
 // getTokenMetaFromDescription parses JSON metadata from token's description.
 func getTokenMetaFromDescription(description string) (map[string]string, error) {
-	re := regexp.MustCompile(`.*({.+})`)
-
-	matches := re.FindStringSubmatch(description)
+	matches := tokenRE.FindStringSubmatch(description)
 	if len(matches) != 2 {
 		return nil, fmt.Errorf("failed to extract token metadata from description: %s", description)
 	}
@@ -1089,13 +1128,12 @@ func getTokenMetaFromDescription(description string) (map[string]string, error) 
 
 // serviceInstancesForK8SServiceNameAndNamespace calls Consul's ServicesWithFilter to get the list
 // of services instances that have the provided k8sServiceName and k8sServiceNamespace in their metadata.
-func serviceInstancesForK8SServiceNameAndNamespace(k8sServiceName, k8sServiceNamespace, podName string, client *api.Client) (map[string]*api.AgentService, error) {
+func serviceInstancesForK8SServiceNameAndNamespace(k8sServiceName, k8sServiceNamespace string, client *api.Client) (map[string]*api.AgentService, error) {
 	return client.Agent().ServicesWithFilter(
-		fmt.Sprintf(`Meta[%q] == %q and Meta[%q] == %q and Meta[%q] == %q and Meta[%q] == %q`,
+		fmt.Sprintf(`Meta[%q] == %q and Meta[%q] == %q and Meta[%q] == %q`,
 			MetaKeyKubeServiceName, k8sServiceName,
 			MetaKeyKubeNS, k8sServiceNamespace,
 			MetaKeyManagedBy, managedByValue,
-			MetaKeyPodName, podName,
 		))
 }
 
@@ -1387,6 +1425,10 @@ func (r *EndpointsController) fetchAgents(ctx context.Context) (corev1.PodList, 
 func (r *EndpointsController) getAgentClient(agentHostIP hostIP, consulNS string) (*api.Client, error) {
 	r.stateMutex.Lock()
 	defer r.stateMutex.Unlock()
+
+	if agentHostIP == "" {
+		return nil, fmt.Errorf("empty host ip given when creating a client")
+	}
 	// Return the cached client if we already have one.
 	agent, ok := r.agentCache[agentHostIP]
 	if ok && agent.client != nil {
