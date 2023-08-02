@@ -152,6 +152,7 @@ type podStatus struct {
 type agentStatus struct {
 	cachePopulated bool
 	creationTime   time.Time
+	client         *api.Client
 }
 
 type addressHealth struct {
@@ -273,6 +274,7 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 		hostIP := hostIP(agent.Status.HostIP)
 		if hostIP != "" {
 			r.agentCache[hostIP] = agentStatus{
+				client:         r.agentCache[hostIP].client,
 				cachePopulated: r.agentCache[hostIP].cachePopulated,
 				creationTime:   getAgentCreationTime(agent),
 			}
@@ -402,9 +404,9 @@ func (r *EndpointsController) updateHealthAndRegistration(
 		oldStatus.health != newHealth)
 
 	// Create client for Consul agent local to the pod.
-	client, err := r.remoteConsulClient(pod.Status.HostIP, r.consulNamespace(pod.Namespace))
+	client, err := r.getAgentClient(hostIP(pod.Status.HostIP), r.consulNamespace(pod.Namespace))
 	if err != nil {
-		r.Log.Error(err, "failed to create a new Consul client", "address", podHostIP)
+		r.Log.Error(err, "failed to get a Consul client", "address", podHostIP)
 		return false, err
 	}
 
@@ -917,9 +919,9 @@ func (r *EndpointsController) deregisterServiceOnAgents(ctx context.Context, k8s
 }
 
 func deleteServiceInstance(r *EndpointsController, podStatus podStatus, consulNS string) error {
-	client, err := r.remoteConsulClient(string(podStatus.hostIP), consulNS)
+	client, err := r.getAgentClient(podStatus.hostIP, consulNS)
 	if err != nil {
-		r.Log.Error(err, "failed to create a new Consul client", "address", podStatus.hostIP)
+		r.Log.Error(err, "failed to get a Consul client", "address", podStatus.hostIP)
 		return err
 	}
 
@@ -980,12 +982,19 @@ func (r *EndpointsController) populateCache(ctx context.Context, req ctrl.Reques
 		go func() {
 			defer waiter.Done()
 			for agent := range agentChan {
-				pods, err := r.getAgentDataForCache(agent, r.consulNamespace(req.Namespace))
+				consulNS := r.consulNamespace(req.Namespace)
+				consulClient, err := r.getAgentClient(hostIP(agent.Status.HostIP), consulNS)
+				if err != nil {
+					r.Log.Error(err, "error while getting Consul client for cache population", "agentIP", agent.Status.HostIP)
+					continue
+				}
+				pods, err := r.getAgentDataForCache(consulClient, agent, consulNS)
 				r.stateMutex.Lock()
 				{
 					r.agentCache[hostIP(agent.Status.HostIP)] = agentStatus{
 						cachePopulated: err == nil,
 						creationTime:   getAgentCreationTime(agent),
+						client:         consulClient,
 					}
 					if err != nil {
 						r.Log.Error(err, "error while contacting agent for cache population", "agentIP", agent.Status.HostIP)
@@ -1292,11 +1301,7 @@ func (r *EndpointsController) consulNamespace(namespace string) string {
 	return namespaces.ConsulNamespace(namespace, r.EnableConsulNamespaces, r.ConsulDestinationNamespace, r.EnableNSMirroring, r.NSMirroringPrefix)
 }
 
-func (r *EndpointsController) getAgentDataForCache(agent corev1.Pod, consulNS string) ([]podStatus, error) {
-	consulClient, err := r.remoteConsulClient(agent.Status.HostIP, consulNS)
-	if err != nil {
-		return nil, err
-	}
+func (r *EndpointsController) getAgentDataForCache(consulClient *api.Client, agent corev1.Pod, consulNS string) ([]podStatus, error) {
 	svcs, err := consulClient.Agent().Services()
 	if err != nil {
 		return nil, err
@@ -1377,6 +1382,25 @@ func (r *EndpointsController) fetchAgents(ctx context.Context) (corev1.PodList, 
 		return corev1.PodList{}, err
 	}
 	return agents, nil
+}
+
+func (r *EndpointsController) getAgentClient(agentHostIP hostIP, consulNS string) (*api.Client, error) {
+	r.stateMutex.Lock()
+	defer r.stateMutex.Unlock()
+	// Return the cached client if we already have one.
+	agent, ok := r.agentCache[agentHostIP]
+	if ok && agent.client != nil {
+		return agent.client, nil
+	}
+	// Otherwise, create one and cache it.
+	r.Log.Info("creating new client for agent", "hostIP", agentHostIP)
+	consulClient, err := r.remoteConsulClient(string(agentHostIP), consulNS)
+	if err != nil {
+		return nil, err
+	}
+	agent.client = consulClient
+	r.agentCache[agentHostIP] = agent
+	return consulClient, nil
 }
 
 // hasBeenInjected checks the value of the status annotation and returns true if the Pod has been injected.
