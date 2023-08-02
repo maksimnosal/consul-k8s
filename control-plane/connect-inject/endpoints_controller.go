@@ -185,6 +185,7 @@ func (r *EndpointsController) Reconcile(ctx context.Context, req ctrl.Request) (
 		hostIP := hostIP(agent.Status.HostIP)
 		oldAgentStatus := r.agentCache[hostIP]
 		if hostIP != "" {
+			// Mark our agent as new if it restarted (bounced) or if the cache was never populated for it.
 			if !oldAgentStatus.cachePopulated || creationTime.After(oldAgentStatus.creationTime) {
 				newAgents[hostIP] = agent
 			}
@@ -300,8 +301,8 @@ func (r *EndpointsController) updateHealthAndRegistrations(ctx context.Context, 
 	waiter.Add(concurrentCalls)
 
 	// Queue the agent calls.
-	allMissingPods := make(map[podID]bool)
 	var hadError atomic.Bool
+	allMissingPods := make(map[podID]bool)
 	addressHealthChan := make(chan addressHealth)
 	for i := 0; i < concurrentCalls; i++ {
 		go func() {
@@ -312,7 +313,9 @@ func (r *EndpointsController) updateHealthAndRegistrations(ctx context.Context, 
 					r.Log.Error(err, "error while reconciling address", "address", addrHealth.address, "pod", podID)
 					hadError.Store(true)
 				} else if missingPod {
+					r.stateMutex.Lock()
 					allMissingPods[podID] = true
+					r.stateMutex.Unlock()
 				}
 			}
 		}()
@@ -420,7 +423,11 @@ func (r *EndpointsController) updateHealthAndRegistration(
 		health:              "",   // set this to empty until we save the health check successfully.
 	}
 	if shouldUpdateRegistration && managedByEndpointsController {
+		// Add an entry into our cache since we've done a partial service registration.
+		r.stateMutex.Lock()
 		newStatus.registrationSuccess = false
+		r.trackPod(newStatus)
+		r.stateMutex.Unlock()
 
 		// Register the service instance with the local agent.
 		// Note: the order of how we register services is important,
@@ -433,11 +440,6 @@ func (r *EndpointsController) updateHealthAndRegistration(
 			r.Log.Error(err, "failed to register service", "name", serviceRegistration.Name)
 			return false, err
 		}
-
-		// Add an entry into our cache since we've done a partial service registration.
-		r.stateMutex.Lock()
-		r.trackPod(newStatus)
-		r.stateMutex.Unlock()
 
 		// Register the proxy service instance with the local agent.
 		r.Log.Info("registering proxy service with Consul", "name", proxyServiceRegistration.Name)
