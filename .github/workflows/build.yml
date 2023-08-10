@@ -246,14 +246,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - { goos: "linux", goarch: "arm", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
-          - { goos: "linux", goarch: "arm64", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
-          - { goos: "linux", goarch: "386", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
-          - { goos: "linux", goarch: "amd64", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
-          - { goos: "linux", goarch: "amd64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
-          - { goos: "linux", goarch: "arm64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
-          - { goos: "windows", goarch: "amd64", bin: ".exe", os: "windows", runner: "windows-latest", taarget: "release-windows" }
-    name: Docker ${{ matrix.goarch }} default release build
+          - { goos: "linux", goarch: "arm", os: "linux", runner: "ubuntu-latest", target: "release-default" }
+          - { goos: "linux", goarch: "arm64", os: "linux", runner: "ubuntu-latest", target: "release-default" }
+          - { goos: "linux", goarch: "386", os: "linux", runner: "ubuntu-latest", target: "release-default" }
+          - { goos: "linux", goarch: "amd64", os: "linux", runner: "ubuntu-latest", target: "release-default" }
+          - { goos: "linux", goarch: "amd64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest", target: "release-default" }
+          - { goos: "linux", goarch: "arm64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest", target: "release-default" }
+          - { goos: "windows", goarch: "amd64", bin: ".exe", os: "windows", runner: "windows-latest", target: "release-windows" }
+    name: Docker ${{ matirx.os }} ${{ matrix.goarch }} default release build
     needs: [ get-product-version, build ]
     runs-on: ${{ matrix.runner }}
     env:
