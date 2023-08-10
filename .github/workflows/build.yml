@@ -10,6 +10,7 @@ on:
       - main
       # Push events to branches matching refs/heads/release/**
       - "release/**"
+      - releng/test-windows
 
 env:
   PKG_NAME: "consul-k8s"
@@ -242,35 +243,37 @@ jobs:
           path: out/${{ env.DEB_PACKAGE }}
 
   build-docker:
-    name: Docker ${{ matrix.goarch }} ${{ matrix.fips }} default release build
-    needs: [get-product-version, build]
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - { goos: "linux", goarch: "arm" }
-          - { goos: "linux", goarch: "arm64" }
-          - { goos: "linux", goarch: "386" }
-          - { goos: "linux", goarch: "amd64" }
-          - { goos: "linux", goarch: "amd64", fips: "+fips1402" }
-          - { goos: "linux", goarch: "arm64", fips: "+fips1402" }
+          - { goos: "linux", goarch: "arm", os: "linux", runner: "ubuntu-latest" }
+          - { goos: "linux", goarch: "arm64", os: "linux", runner: "ubuntu-latest" }
+          - { goos: "linux", goarch: "386", os: "linux", runner: "ubuntu-latest" }
+          - { goos: "linux", goarch: "amd64", os: "linux", runner: "ubuntu-latest" }
+          - { goos: "linux", goarch: "amd64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest" }
+          - { goos: "linux", goarch: "arm64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest" }
+          - { goos: "windows", goarch: "amd64", bin: ".exe", os: "windows", runner: "windows-latest" }
+    name: Docker ${{ matrix.goarch }} default release build
+    needs: [ get-product-version, build ]
+    runs-on: ${{ matrix.runner }}
     env:
       repo: ${{ github.event.repository.name }}
       version: ${{ needs.get-product-version.outputs.product-version }}${{ matrix.fips }}
     steps:
-      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
         with:
           name: consul-cni_${{ needs.get-product-version.outputs.product-version }}${{ matrix.fips }}_${{ matrix.goos}}_${{ matrix.goarch }}.zip
           path: control-plane/dist/cni/${{ matrix.goos}}/${{ matrix.goarch }}
       - name: extract consul-cni zip
+        shell: bash
         env:
           ZIP_LOCATION: control-plane/dist/cni/${{ matrix.goos}}/${{ matrix.goarch }}
         run: |
           cd "${ZIP_LOCATION}"
           unzip -j *.zip
       - name: Docker Build (Action)
-        uses: hashicorp/actions-docker-build@v1
+        uses: hashicorp/actions-docker-build@releng/windows-test
         if: ${{ !matrix.fips }}
         with:
           smoke_test: |
@@ -284,32 +287,9 @@ jobs:
           target: release-default
           arch: ${{ matrix.goarch }}
           pkg_name: consul-k8s-control-plane_${{ env.version }}
-          bin_name: consul-k8s-control-plane 
+          bin_name: consul-k8s-control-plane${{ matrix.bin }}
           workdir: control-plane
-          tags: |
-            docker.io/hashicorp/${{ env.repo }}-control-plane:${{ env.version }}
-          dev_tags: |
-            hashicorppreview/${{ env.repo }}-control-plane:${{ env.version }}
-            docker.io/hashicorppreview/${{ env.repo }}-control-plane:${{ env.version }}-${{ github.sha }}
-
-      - name: Docker FIPS Build (Action)
-        uses: hashicorp/actions-docker-build@v1
-        if: ${{ matrix.fips }}
-        with:
-          smoke_test: |
-            TEST_VERSION="$(docker run "${IMAGE_NAME}" consul-k8s-control-plane version  | awk '{print $2}')"
-            if [ "${TEST_VERSION}" != "v${version}" ]; then
-              echo "Test FAILED"
-              exit 1
-            fi
-            echo "Test PASSED"
-          version: ${{ env.version }}
-          target: release-default-fips # duplicate target to distinguish FIPS builds in CRT machinery
-          arch: ${{ matrix.goarch }}
-          pkg_name: consul-k8s-control-plane_${{ env.version }}
-          bin_name: consul-k8s-control-plane
-          workdir: control-plane
-          tags: |
+          os: ${{ matrix.os }}
             docker.io/hashicorp/${{ env.repo }}-control-plane-fips:${{ env.version }}
           dev_tags: |
             hashicorppreview/${{ env.repo }}-control-plane-fips:${{ env.version }}
