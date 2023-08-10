@@ -246,13 +246,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - { goos: "linux", goarch: "arm", os: "linux", runner: "ubuntu-latest" }
-          - { goos: "linux", goarch: "arm64", os: "linux", runner: "ubuntu-latest" }
-          - { goos: "linux", goarch: "386", os: "linux", runner: "ubuntu-latest" }
-          - { goos: "linux", goarch: "amd64", os: "linux", runner: "ubuntu-latest" }
-          - { goos: "linux", goarch: "amd64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest" }
-          - { goos: "linux", goarch: "arm64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest" }
-          - { goos: "windows", goarch: "amd64", bin: ".exe", os: "windows", runner: "windows-latest" }
+          - { goos: "linux", goarch: "arm", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
+          - { goos: "linux", goarch: "arm64", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
+          - { goos: "linux", goarch: "386", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
+          - { goos: "linux", goarch: "amd64", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
+          - { goos: "linux", goarch: "amd64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
+          - { goos: "linux", goarch: "arm64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest", taarget: "release-default" }
+          - { goos: "windows", goarch: "amd64", bin: ".exe", os: "windows", runner: "windows-latest", taarget: "release-windows" }
     name: Docker ${{ matrix.goarch }} default release build
     needs: [ get-product-version, build ]
     runs-on: ${{ matrix.runner }}
@@ -284,12 +284,13 @@ jobs:
             fi
             echo "Test PASSED"
           version: ${{ env.version }}
-          target: release-default
+          target: ${{ matrix.target }}
           arch: ${{ matrix.goarch }}
           pkg_name: consul-k8s-control-plane_${{ env.version }}
           bin_name: consul-k8s-control-plane${{ matrix.bin }}
           workdir: control-plane
           os: ${{ matrix.os }}
+          tags:
             docker.io/hashicorp/${{ env.repo }}-control-plane-fips:${{ env.version }}
           dev_tags: |
             hashicorppreview/${{ env.repo }}-control-plane-fips:${{ env.version }}
