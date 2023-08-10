@@ -21,4 +21,5 @@ COPY dist/cni/${TARGETOS}/${TARGETARCH}/${CNI_BIN_NAME} /bin/
 # Set Path
 RUN SETX /M path "%PATH%;C:\consul-cni.exe;C:\Program Files\Go\bin;C:\consul-k8s-control-plane.exe;"
 
-CMD /bin/${BIN_NAME}
+ENTRYPOINT ["powershell.exe"]
+CMD ["consul-k8s-control-plane.exe"]
