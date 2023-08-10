@@ -252,7 +252,7 @@ jobs:
           - { goos: "linux", goarch: "amd64", os: "linux", runner: "ubuntu-latest", dockerfile: "Dockerfile" }
           - { goos: "linux", goarch: "amd64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest", dockerfile: "Dockerfile" }
           - { goos: "linux", goarch: "arm64", fips: "+fips1402", os: "linux", runner: "ubuntu-latest", dockerfile: "Dockerfile" }
-          - { goos: "windows", goarch: "amd64", bin: ".exe", os: "windows", runner: "custom-windows-medium", dockerfile: "Dockerfile.windows" }
+          - { goos: "windows", goarch: "amd64", bin: ".exe", os: "windows", runner: "windows-latest", dockerfile: "Dockerfile.windows" }
     name: Docker ${{ matrix.os }} ${{ matrix.goarch }} default release build
     needs: [ get-product-version, build ]
     runs-on: ${{ matrix.runner }}
