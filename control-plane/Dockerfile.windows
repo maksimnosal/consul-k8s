@@ -15,10 +15,10 @@ ARG CNI_BIN_NAME=consul-cni.exe
 
 RUN ["powershell", "Set-ExecutionPolicy", "Bypass", "-Scope", "Process", "-Force;"]
 
-# Set Path
-RUN SETX /M path "%PATH%;C:\consul-cni.exe;C:\Program Files\Go\bin;C:\consul-k8s-control-plane.exe;"
-
 COPY dist/${TARGETOS}/${TARGETARCH}/${BIN_NAME} /bin/
 COPY dist/cni/${TARGETOS}/${TARGETARCH}/${CNI_BIN_NAME} /bin/
+
+# Set Path
+RUN SETX /M path "%PATH%;C:\consul-cni.exe;C:\Program Files\Go\bin;C:\consul-k8s-control-plane.exe;"
 
 CMD /bin/${BIN_NAME}
