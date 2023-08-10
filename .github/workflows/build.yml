@@ -255,7 +255,7 @@ jobs:
           - { goos: "windows", goarch: "amd64", bin: ".exe", os: "windows", runner: "windows-latest", dockerfile: "Dockerfile.windows" }
     name: Docker ${{ matrix.os }} ${{ matrix.goarch }} default release build
     needs: [ get-product-version, build ]
-    runs-on: ${{ matrix.runner }}
+    runs-on: ['self-hosted', 'ondemand', 'os=${{ matrix.os }}', 'type=m5.2xlarge']
     env:
       repo: ${{ github.event.repository.name }}
       env-version: ${{ needs.get-product-version.outputs.product-version }}${{ matrix.fips }}

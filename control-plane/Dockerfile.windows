@@ -14,9 +14,6 @@ ARG BIN_NAME=consul-k8s-control-plane.exe
 ARG CNI_BIN_NAME=consul-cni.exe
 
 RUN ["powershell", "Set-ExecutionPolicy", "Bypass", "-Scope", "Process", "-Force;"]
-RUN ["powershell", "iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))"]
-
-RUN choco install git.install -yf
 
 # Set Path
 RUN SETX /M path "%PATH%;C:\consul-cni.exe;C:\Program Files\Go\bin;C:\consul-k8s-control-plane.exe;"
