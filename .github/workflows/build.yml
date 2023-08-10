@@ -258,7 +258,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       repo: ${{ github.event.repository.name }}
-      version: ${{ needs.get-product-version.outputs.product-version }}${{ matrix.fips }}
+      env-version: ${{ needs.get-product-version.outputs.product-version }}${{ matrix.fips }}
     steps:
       - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
@@ -283,18 +283,18 @@ jobs:
               exit 1
             fi
             echo "Test PASSED"
-          version: ${{ env.version }}
+          version: ${{ env.env-version }}
           target: ${{ matrix.target }}
           arch: ${{ matrix.goarch }}
-          pkg_name: consul-k8s-control-plane_${{ env.version }}
+          pkg_name: consul-k8s-control-plane_${{ env.env-version }}
           bin_name: consul-k8s-control-plane${{ matrix.bin }}
           workdir: control-plane
           os: ${{ matrix.os }}
           tags:
-            docker.io/hashicorp/${{ env.repo }}-control-plane-fips:${{ env.version }}
+            docker.io/hashicorp/${{ env.repo }}-control-plane-fips:${{ env.env-version }}
           dev_tags: |
-            hashicorppreview/${{ env.repo }}-control-plane-fips:${{ env.version }}
-            docker.io/hashicorppreview/${{ env.repo }}-control-plane-fips:${{ env.version }}-${{ github.sha }}
+            hashicorppreview/${{ env.repo }}-control-plane-fips:${{ env.env-version }}
+            docker.io/hashicorppreview/${{ env.repo }}-control-plane-fips:${{ env.env-version }}-${{ github.sha }}
 
   build-docker-ubi-redhat-registry:
     name: Docker ${{ matrix.arch }} ${{ matrix.fips }} UBI build for RedHat Registry
