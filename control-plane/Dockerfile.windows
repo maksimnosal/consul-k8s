@@ -1,6 +1,6 @@
 # This dockerfile was not used to build images. It is here as a starting point.
 # We will need to use it later when we have build support for windows images.
-FROM mcr.microsoft.com/windows/nanoserver:ltsc2022 as release-default
+FROM mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022 as release-default
 
 LABEL maintainer="Team RelEng <team-rel-eng@hashicorp.com>"
 ARG PRODUCT_VERSION
@@ -13,7 +13,7 @@ ARG TARGETARCH
 ARG BIN_NAME=consul-k8s-control-plane.exe
 ARG CNI_BIN_NAME=consul-cni.exe
 
-# RUN ["powershell", "Set-ExecutionPolicy", "Bypass", "-Scope", "Process", "-Force;"]
+USER "NT Authority\System"
 
 COPY dist/${TARGETOS}/${TARGETARCH}/${BIN_NAME} /bin/
 COPY dist/cni/${TARGETOS}/${TARGETARCH}/${CNI_BIN_NAME} /bin/
