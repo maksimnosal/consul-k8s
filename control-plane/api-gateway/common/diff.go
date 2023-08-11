@@ -62,7 +62,17 @@ func EntriesEqual(a, b api.ConfigEntry) bool {
 		}
 	case *api.InlineCertificateConfigEntry:
 		if bCast, ok := b.(*api.InlineCertificateConfigEntry); ok {
-			return certificatesEqual(aCast, bCast)
+			cert := &certConfigEntry{}
+			return certificatesEqual(
+				cert.fromInlineCertConfigEntry(aCast),
+				cert.fromInlineCertConfigEntry(bCast))
+		}
+	case *api.VaultKVCertificateConfigEntry:
+		if bCast, ok := b.(*api.VaultKVCertificateConfigEntry); ok {
+			cert := &certConfigEntry{}
+			return certificatesEqual(
+				cert.fromVaultCertConfigEntry(aCast),
+				cert.fromVaultCertConfigEntry(bCast))
 		}
 	}
 	return false
@@ -219,11 +229,45 @@ func (e entryComparator) tcpRouteServicesEqual(a, b api.TCPService) bool {
 		orDefault(a.Partition, e.partitionA) == orDefault(b.Partition, e.partitionB)
 }
 
-func certificatesEqual(a, b *api.InlineCertificateConfigEntry) bool {
+type certConfigEntry struct {
+	Kind        string
+	Name        string
+	Partition   string
+	Namespace   string
+	Meta        map[string]string
+	Certificate string
+	PrivateKey  string
+}
+
+func (c *certConfigEntry) fromInlineCertConfigEntry(ce *api.InlineCertificateConfigEntry) *certConfigEntry {
+	return &certConfigEntry{
+		Kind:        ce.Kind,
+		Name:        ce.Name,
+		Partition:   ce.Partition,
+		Namespace:   ce.Namespace,
+		Meta:        ce.Meta,
+		Certificate: ce.Certificate,
+		PrivateKey:  ce.PrivateKey,
+	}
+}
+
+func (c *certConfigEntry) fromVaultCertConfigEntry(ce *api.VaultKVCertificateConfigEntry) *certConfigEntry {
+	return &certConfigEntry{
+		Kind:      ce.Kind,
+		Name:      ce.Name,
+		Partition: ce.Partition,
+		Namespace: ce.Namespace,
+		Meta:      ce.Meta,
+		// TODO: fetch certificate and private key from vault
+		Certificate: "TODO",
+		PrivateKey:  "TODO",
+	}
+}
+
+func certificatesEqual(a, b *certConfigEntry) bool {
 	if a == nil || b == nil {
 		return false
 	}
-
 	return (entryComparator{
 		namespaceA: NormalizeEmptyMetadataString(a.Namespace),
 		partitionA: NormalizeEmptyMetadataString(a.Partition),
@@ -232,7 +276,7 @@ func certificatesEqual(a, b *api.InlineCertificateConfigEntry) bool {
 	}).certificatesEqual(*a, *b)
 }
 
-func (e entryComparator) certificatesEqual(a, b api.InlineCertificateConfigEntry) bool {
+func (e entryComparator) certificatesEqual(a, b certConfigEntry) bool {
 	return a.Kind == b.Kind &&
 		a.Name == b.Name &&
 		e.namespaceA == e.namespaceB &&
