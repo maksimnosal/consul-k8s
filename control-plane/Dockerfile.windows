@@ -13,7 +13,7 @@ ARG TARGETARCH
 ARG BIN_NAME=consul-k8s-control-plane.exe
 ARG CNI_BIN_NAME=consul-cni.exe
 
-RUN ["powershell", "Set-ExecutionPolicy", "Bypass", "-Scope", "Process", "-Force;"]
+# RUN ["powershell", "Set-ExecutionPolicy", "Bypass", "-Scope", "Process", "-Force;"]
 
 COPY dist/${TARGETOS}/${TARGETARCH}/${BIN_NAME} /bin/
 COPY dist/cni/${TARGETOS}/${TARGETARCH}/${CNI_BIN_NAME} /bin/
