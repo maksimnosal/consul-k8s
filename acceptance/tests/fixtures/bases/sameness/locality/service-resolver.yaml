@@ -1,0 +1,17 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceResolver
+metadata:
+  name: static-server
+spec:
+  failover:
+    '*':
+      samenessGroup: group-01
+      policy:
+        mode: order-by-locality
+        regions:
+          - us-east-1
+          - us-east-2
+          - us-west-1

@@ -505,68 +505,132 @@ func TestFailover_Connect(t *testing.T) {
 			// Verify all the failover Scenarios
 			logger.Log(t, "verifying failover scenarios")
 
-			subCases := []struct {
+			//subCases := []struct {
+			//	name      string
+			//	server    *cluster
+			//	failovers []struct {
+			//		failoverServer *cluster
+			//		expectedPQ     expectedPQ
+			//	}
+			//}{
+			//	{
+			//		name:   "cluster-01-a perspective", // This matches the diagram at the beginning of the test
+			//		server: testClusters[keyCluster01a],
+			//		failovers: []struct {
+			//			failoverServer *cluster
+			//			expectedPQ     expectedPQ
+			//		}{
+			//			{failoverServer: testClusters[keyCluster01a], expectedPQ: expectedPQ{partition: "default", peerName: "", namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster01b], expectedPQ: expectedPQ{partition: "ap1", peerName: "", namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster02a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster02a].name, namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster03a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster03a].name, namespace: "ns2"}},
+			//		},
+			//	},
+			//	{
+			//		name:   "cluster-01-b partition perspective",
+			//		server: testClusters[keyCluster01b],
+			//		failovers: []struct {
+			//			failoverServer *cluster
+			//			expectedPQ     expectedPQ
+			//		}{
+			//			{failoverServer: testClusters[keyCluster01b], expectedPQ: expectedPQ{partition: "ap1", peerName: "", namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster01a], expectedPQ: expectedPQ{partition: "default", peerName: "", namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster02a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster02a].name, namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster03a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster03a].name, namespace: "ns2"}},
+			//		},
+			//	},
+			//	{
+			//		name:   "cluster-02-a perspective",
+			//		server: testClusters[keyCluster02a],
+			//		failovers: []struct {
+			//			failoverServer *cluster
+			//			expectedPQ     expectedPQ
+			//		}{
+			//			{failoverServer: testClusters[keyCluster02a], expectedPQ: expectedPQ{partition: "default", peerName: "", namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster01a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster01a].name, namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster01b], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster01b].name, namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster03a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster03a].name, namespace: "ns2"}},
+			//		},
+			//	},
+			//	{
+			//		name:   "cluster-03-a perspective",
+			//		server: testClusters[keyCluster03a],
+			//		failovers: []struct {
+			//			failoverServer *cluster
+			//			expectedPQ     expectedPQ
+			//		}{
+			//			{failoverServer: testClusters[keyCluster03a], expectedPQ: expectedPQ{partition: "default", peerName: "", namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster01a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster01a].name, namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster01b], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster01b].name, namespace: "ns2"}},
+			//			{failoverServer: testClusters[keyCluster02a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster02a].name, namespace: "ns2"}},
+			//		},
+			//	},
+			//}
+			//for _, sc := range subCases {
+			//	t.Run(sc.name, func(t *testing.T) {
+			//		// Reset the scale of all servers
+			//		testClusters.resetScale(t)
+			//		testClusters.verifyServerUpState(t, cfg.EnableTransparentProxy)
+			//		// We're resetting the scale, so make sure we have all the new IP addresses saved
+			//		testClusters.setServerIP(t)
+			//
+			//		for _, v := range sc.failovers {
+			//			// Verify Failover (If this is the first check, then just verifying we're starting with the right server)
+			//			logger.Log(t, "checking service failover")
+			//
+			//			if cfg.EnableTransparentProxy {
+			//				sc.server.serviceTargetCheck(t, v.failoverServer.name, fmt.Sprintf("http://static-server.virtual.ns2.ns.%s.ap.consul", sc.server.fullTextPartition()))
+			//			} else {
+			//				sc.server.serviceTargetCheck(t, v.failoverServer.name, "localhost:8080")
+			//			}
+			//
+			//			// 1. The admin partition does not contain a server, so DNS service will not resolve on the admin partition cluster
+			//			// 2. A workaround to perform the DNS and PQ queries on the primary datacenter cluster by specifying the admin partition
+			//			// e.g kubectl --context kind-dc1 --namespace ns1 exec -i deploy/static-client -c static-client \
+			//			//	-- dig @test-3lmypr-consul-dns.default static-server.service.ns2.ns.mine.sg.ap1.ap.consul
+			//			// Verify DNS.
+			//			logger.Log(t, "verifying dns")
+			//			sc.server.dnsFailoverCheck(t, cfg, releaseName, v.failoverServer)
+			//
+			//			logger.Log(t, "verifying prepared query")
+			//			sc.server.preparedQueryFailoverCheck(t, releaseName, v.expectedPQ, v.failoverServer)
+			//
+			//			// Scale down static-server on the current failover, will fail over to the next.
+			//			logger.Logf(t, "scaling server down on %s", v.failoverServer.name)
+			//			k8s.KubectlScale(t, v.failoverServer.serverOpts, staticServerDeployment, 0)
+			//		}
+			//	})
+			//}
+
+			// After primary sameness failover tests, we add a resolver w/ order-by-locality failover and then
+			// re-test using the same topology, expecting different results.
+			logger.Logf(t, "applying order-by-locality resolver on %s", testClusters[keyCluster01a].context.KubectlOptions(t).ContextName)
+			//TODO remove duplicate, added in both ns's just to ensure test wasn't failing due to incorrect ns
+			applyResources(t, cfg, "../fixtures/bases/sameness/locality", testClusters[keyCluster01a].clientOpts)
+			applyResources(t, cfg, "../fixtures/bases/sameness/locality", testClusters[keyCluster01a].serverOpts)
+
+			localityCases := []struct {
 				name      string
 				server    *cluster
 				failovers []struct {
 					failoverServer *cluster
-					expectedPQ     expectedPQ
 				}
 			}{
 				{
-					name:   "cluster-01-a perspective", // This matches the diagram at the beginning of the test
+					name:   "cluster-01-a perspective - locality failover",
 					server: testClusters[keyCluster01a],
 					failovers: []struct {
 						failoverServer *cluster
-						expectedPQ     expectedPQ
 					}{
-						{failoverServer: testClusters[keyCluster01a], expectedPQ: expectedPQ{partition: "default", peerName: "", namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster01b], expectedPQ: expectedPQ{partition: "ap1", peerName: "", namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster02a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster02a].name, namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster03a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster03a].name, namespace: "ns2"}},
-					},
-				},
-				{
-					name:   "cluster-01-b partition perspective",
-					server: testClusters[keyCluster01b],
-					failovers: []struct {
-						failoverServer *cluster
-						expectedPQ     expectedPQ
-					}{
-						{failoverServer: testClusters[keyCluster01b], expectedPQ: expectedPQ{partition: "ap1", peerName: "", namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster01a], expectedPQ: expectedPQ{partition: "default", peerName: "", namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster02a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster02a].name, namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster03a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster03a].name, namespace: "ns2"}},
-					},
-				},
-				{
-					name:   "cluster-02-a perspective",
-					server: testClusters[keyCluster02a],
-					failovers: []struct {
-						failoverServer *cluster
-						expectedPQ     expectedPQ
-					}{
-						{failoverServer: testClusters[keyCluster02a], expectedPQ: expectedPQ{partition: "default", peerName: "", namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster01a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster01a].name, namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster01b], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster01b].name, namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster03a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster03a].name, namespace: "ns2"}},
-					},
-				},
-				{
-					name:   "cluster-03-a perspective",
-					server: testClusters[keyCluster03a],
-					failovers: []struct {
-						failoverServer *cluster
-						expectedPQ     expectedPQ
-					}{
-						{failoverServer: testClusters[keyCluster03a], expectedPQ: expectedPQ{partition: "default", peerName: "", namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster01a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster01a].name, namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster01b], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster01b].name, namespace: "ns2"}},
-						{failoverServer: testClusters[keyCluster02a], expectedPQ: expectedPQ{partition: "default", peerName: testClusters[keyCluster02a].name, namespace: "ns2"}},
+						{failoverServer: testClusters[keyCluster01a]},
+						{failoverServer: testClusters[keyCluster01b]},
+						{failoverServer: testClusters[keyCluster03a]},
+						{failoverServer: testClusters[keyCluster02a]},
 					},
 				},
 			}
-			for _, sc := range subCases {
+
+			for _, sc := range localityCases {
 				t.Run(sc.name, func(t *testing.T) {
 					// Reset the scale of all servers
 					testClusters.resetScale(t)
@@ -583,17 +647,6 @@ func TestFailover_Connect(t *testing.T) {
 						} else {
 							sc.server.serviceTargetCheck(t, v.failoverServer.name, "localhost:8080")
 						}
-
-						// 1. The admin partition does not contain a server, so DNS service will not resolve on the admin partition cluster
-						// 2. A workaround to perform the DNS and PQ queries on the primary datacenter cluster by specifying the admin partition
-						// e.g kubectl --context kind-dc1 --namespace ns1 exec -i deploy/static-client -c static-client \
-						//	-- dig @test-3lmypr-consul-dns.default static-server.service.ns2.ns.mine.sg.ap1.ap.consul
-						// Verify DNS.
-						logger.Log(t, "verifying dns")
-						sc.server.dnsFailoverCheck(t, cfg, releaseName, v.failoverServer)
-
-						logger.Log(t, "verifying prepared query")
-						sc.server.preparedQueryFailoverCheck(t, releaseName, v.expectedPQ, v.failoverServer)
 
 						// Scale down static-server on the current failover, will fail over to the next.
 						logger.Logf(t, "scaling server down on %s", v.failoverServer.name)
