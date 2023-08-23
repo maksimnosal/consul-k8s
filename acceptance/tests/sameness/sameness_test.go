@@ -491,9 +491,9 @@ func TestFailover_Connect(t *testing.T) {
 			// This is currently the only locality testing we do for k8s and ensures that single-partition
 			// locality-aware routing will function in consul-k8s. In the future, this test will be expanded
 			// to test multi-cluster locality-based failover with sameness groups.
-			//for _, v := range testClusters {
-			//	checkLocalities(t, v)
-			//}
+			for _, v := range testClusters {
+				checkLocalities(t, v)
+			}
 
 			// Verify all the failover Scenarios
 			logger.Log(t, "verifying failover scenarios")
