@@ -1008,7 +1008,7 @@ $ kind create cluster --name=dc1 && kind create cluster --name=dc2
 Finally, run the test like shown above:
 ```shell
 $ cd acceptance/tests
-$ go test -run Vault_WANFederationViaGateways ./vault/... -p 1 -timeout 2h -failfast -use-kind -no-cleanup-on-failure -kubecontext=kind-dc1 -secondary-kubecontext=kind-dc2 -enable-multi-cluster -debug-directory=/tmp/debug
+$ go test -run Vault_WANFederationViaGateways ./vault/... -p 1 -timeout 2h -failfast -use-kind -no-cleanup-on-failure -kube-contexts="kind-dc1,kind-dc2" -enable-multi-cluster -debug-directory=/tmp/debug
 ```
 You can interact with the running kubernetes clusters now using `kubectl [COMMAND] --context=<kind-dc1/kind-dc2>`
 
