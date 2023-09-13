@@ -65,6 +65,7 @@ rules:
   - peeringdialers/status
   {{- end }}
   - jwtproviders/status
+  - gatewaypolicies/status
   verbs:
   - get
   - patch
