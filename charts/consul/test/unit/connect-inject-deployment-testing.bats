@@ -8,6 +8,7 @@ load _helpers
       -s templates/connect-inject-deployment.yaml  \
       --set 'connectInject.enabled=true' \
       --set 'global.experiments[0]=resource-apis' \
+      --set 'ui.enabled=false' \
                  . | tee /dev/stderr |
       yq '.spec.template.spec.containers[0].command | any(contains("-tls-cert-dir=/etc/connect-injector/certs"))' | tee /dev/stderr)
 
