@@ -5,6 +5,8 @@ package common
 
 import (
 	"fmt"
+	"github.com/google/go-cmp/cmp"
+	"github.com/hashicorp/consul-k8s/control-plane/helper/test"
 	"strconv"
 	"strings"
 
@@ -12,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/anypb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -207,4 +210,72 @@ func ConsulNamespaceIsNotFound(err error) bool {
 		return true
 	}
 	return false
+}
+
+// ReconcileProto takes an existing proto.Message (which may be a default value) and an update message (e.g. a default
+// value with desired modifications applied). It merges the updated version into a copy of the existing message, then
+// returns the updated copy and whether the existing message was updated.
+//
+// No arguments are modified by ReconcileProto, and a copy is returned regardless of whether updates are made.
+//
+// The provided comparison func can be strict (e.g. proto.Equal, which requires repeated fields to have the same order)
+// or some custom func that's more lenient. Be wary of using cmp.Diff in production, as it is documented to be
+// panic-capable, unoptimized for performance, and intended only for tests.
+//
+// For Consul V2 resources, it's typically best to reconcile the unmarshalled Data proto, and handle any needed updates
+// to non-dynamic Resource fields like ID, Metadata, etc. separately.
+func ReconcileProto(existing, updates proto.Message, cmpFn func(m1, m2 proto.Message) bool) (bool, proto.Message) {
+	existingUpdated := proto.Clone(existing)
+
+	// Manually merge repeated fields on the copy, which are unfortunately appended
+	// rather than replaced by proto.Merge, with no option to change behavior.
+	existingM := existingUpdated.ProtoReflect()
+	walkProto(existingM,
+		func(f protoreflect.FieldDescriptor) bool {
+			return f.IsList() && f.Kind() == protoreflect.MessageKind
+		},
+		func(m protoreflect.Message, f protoreflect.FieldDescriptor, _ protoreflect.Value) protoreflect.Value {
+			return protoreflect.ValueOfList(m.NewField(f).List())
+		})
+
+	proto.Merge(existingUpdated, updates)
+	if !cmpFn(existing, existingUpdated) {
+		if diff := cmp.Diff(existing, existingUpdated, test.CmpProtoIgnoreOrder()...); diff != "" {
+			fmt.Printf("unexpected difference in reflection horrors:\n%v", diff)
+		}
+	}
+	return !cmpFn(existing, existingUpdated), existingUpdated
+}
+
+func walkProto(m protoreflect.Message, fieldMatcher func(protoreflect.FieldDescriptor) bool, fieldModder func(protoreflect.Message, protoreflect.FieldDescriptor, protoreflect.Value) protoreflect.Value) {
+	defer func() {
+		if err := recover(); err != nil {
+			//TODO
+			fmt.Printf("unexpected panic: %v", err)
+		}
+	}()
+
+	fields := m.Descriptor().Fields()
+	for i := 0; i < fields.Len(); i++ {
+		f := fields.Get(i)
+		if f.Kind() == protoreflect.MessageKind {
+			if f.Cardinality() == protoreflect.Repeated {
+				fieldM := m.Get(f).List()
+				for j := 0; j < fieldM.Len(); j++ {
+					fl := fieldM.Get(j)
+					if fl.IsValid() {
+						walkProto(fl.Message(), fieldMatcher, fieldModder)
+					}
+				}
+			} else {
+				fieldM := m.Get(f).Message()
+				if fieldM.IsValid() {
+					walkProto(fieldM, fieldMatcher, fieldModder)
+				}
+			}
+		}
+		if fieldMatcher(f) {
+			m.Set(f, fieldModder(m, f, m.Get(f)))
+		}
+	}
 }

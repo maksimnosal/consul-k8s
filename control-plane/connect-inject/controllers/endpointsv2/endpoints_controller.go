@@ -294,12 +294,8 @@ func (r *Controller) ensureService(ctx context.Context, resourceClient pbresourc
 			r.Log.Error(err, "failed to decode fetched resource from Consul", getLogFieldsForResource(id)...)
 		}
 
-		// Note: This is a strict comparison including the order of repeated fields.
-		// If in the future other systems are allowed to modify services in addition to this controller,
-		// we'll likely need to come up with a merge strategy to detect "true diffs" rather than blindly
-		// comparing the generated service value to the one stored in Consul. Due to the fact that
-		// proto.Merge appends rather than replaces repeated fields, this may require use of protoreflect.
-		if proto.Equal(existing, consulSvc) {
+		var updated bool
+		if updated, consulSvcMsg = common.ReconcileProto(existing, consulSvc, proto.Equal); !updated {
 			r.Log.V(1).Info("skipping writing service to Consul: no change detected",
 				getLogFieldsForResource(id)...)
 			return nil

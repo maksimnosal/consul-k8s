@@ -1305,6 +1305,12 @@ func TestReconcile_UpdateService(t *testing.T) {
 									Protocol:    "TCP",
 									AppProtocol: &appProtocolGrpc,
 								},
+								{
+									Name:        "other",
+									Port:        10001,
+									Protocol:    "TCP",
+									AppProtocol: &appProtocolGrpc,
+								},
 							},
 						},
 					},
@@ -1330,6 +1336,13 @@ func TestReconcile_UpdateService(t *testing.T) {
 								Protocol:    "TCP",
 								TargetPort:  intstr.FromString("my-grpc-port"),
 								AppProtocol: &appProtocolGrpc,
+							},
+							{
+								Name:       "other",
+								Port:       10001,
+								Protocol:   "TCP",
+								TargetPort: intstr.FromString("10001"),
+								// no app protocol specified
 							},
 						},
 					},
@@ -1360,6 +1373,11 @@ func TestReconcile_UpdateService(t *testing.T) {
 							VirtualPort: 9090,
 							TargetPort:  "my-grpc-port",
 							Protocol:    pbcatalog.Protocol_PROTOCOL_GRPC,
+						},
+						{
+							VirtualPort: 10001,
+							TargetPort:  "10001",
+							Protocol:    pbcatalog.Protocol_PROTOCOL_UNSPECIFIED,
 						},
 						{
 							TargetPort: "mesh",
@@ -1400,6 +1418,11 @@ func TestReconcile_UpdateService(t *testing.T) {
 							VirtualPort: 9090,
 							TargetPort:  "my-grpc-port",
 							Protocol:    pbcatalog.Protocol_PROTOCOL_GRPC,
+						},
+						{
+							VirtualPort: 10001,
+							TargetPort:  "10001",
+							Protocol:    pbcatalog.Protocol_PROTOCOL_TCP,
 						},
 						{
 							TargetPort: "mesh",
@@ -1697,11 +1720,12 @@ func runReconcileCase(t *testing.T, tc reconcileCase) {
 	}
 
 	// If existing resource specified, create it and ensure it exists.
+	var existingResource *pbresource.Resource
 	if tc.existingResource != nil {
 		writeReq := &pbresource.WriteRequest{Resource: tc.existingResource}
 		_, err = resourceClient.Write(context.Background(), writeReq)
 		require.NoError(t, err)
-		test.ResourceHasPersisted(t, resourceClient, tc.existingResource.Id)
+		existingResource = test.ResourceHasPersisted(t, resourceClient, tc.existingResource.Id)
 	}
 
 	// Run actual reconcile and verify results.
@@ -1718,10 +1742,10 @@ func runReconcileCase(t *testing.T, tc reconcileCase) {
 	}
 	require.False(t, resp.Requeue)
 
-	expectedServiceMatches(t, resourceClient, tc)
+	expectedServiceMatches(t, resourceClient, tc, existingResource)
 }
 
-func expectedServiceMatches(t *testing.T, client pbresource.ResourceServiceClient, tc reconcileCase) {
+func expectedServiceMatches(t *testing.T, client pbresource.ResourceServiceClient, tc reconcileCase, existingResource *pbresource.Resource) {
 	req := &pbresource.ReadRequest{Id: getServiceID(tc.svcName, tc.targetConsulNs, tc.targetConsulPartition)}
 
 	res, err := client.Read(context.Background(), req)
@@ -1738,6 +1762,18 @@ func expectedServiceMatches(t *testing.T, client pbresource.ResourceServiceClien
 	require.NotNil(t, res)
 	require.NotNil(t, res.GetResource().GetData())
 
+	var existingServiceFixture *pbcatalog.Service
+	var existingServiceConsul *pbcatalog.Service
+	if existingResource != nil {
+		existingServiceFixture = &pbcatalog.Service{}
+		err = anypb.UnmarshalTo(tc.existingResource.Data, existingServiceFixture, proto.UnmarshalOptions{})
+		require.NoError(t, err)
+
+		existingServiceConsul = &pbcatalog.Service{}
+		err = anypb.UnmarshalTo(existingResource.Data, existingServiceConsul, proto.UnmarshalOptions{})
+		require.NoError(t, err)
+	}
+
 	expectedService := &pbcatalog.Service{}
 	err = anypb.UnmarshalTo(tc.expectedResource.Data, expectedService, proto.UnmarshalOptions{})
 	require.NoError(t, err)
@@ -1747,14 +1783,21 @@ func expectedServiceMatches(t *testing.T, client pbresource.ResourceServiceClien
 	require.NoError(t, err)
 
 	if diff := cmp.Diff(expectedService, actualService, test.CmpProtoIgnoreOrder()...); diff != "" {
-		t.Errorf("unexpected difference:\n%v", diff)
+		t.Errorf("unexpected difference between expected and actual:\n%v", diff)
 	}
 
 	if tc.expectSameVersion {
-		require.Equal(t, res.GetResource().GetVersion(), res.GetResource().GetVersion(),
+		// This is not necessarily an error, but may be useful for debugging.
+		if diff := cmp.Diff(existingServiceFixture, actualService, test.CmpProtoIgnoreOrder()...); diff != "" {
+			t.Logf("detected difference between existing (test fixture) and actual:\n%v", diff)
+		}
+		if diff := cmp.Diff(existingServiceConsul, actualService, test.CmpProtoIgnoreOrder()...); diff != "" {
+			t.Errorf("unexpected difference between existing (from Consul) and actual:\n%v", diff)
+		}
+		require.Equal(t, existingResource.GetVersion(), res.GetResource().GetVersion(),
 			"wanted same version for existing and expected resources")
-	} else if tc.existingResource != nil && tc.expectedResource != nil {
-		require.NotEqual(t, res.GetResource().GetVersion(), res.GetResource().GetVersion(),
+	} else {
+		require.NotEqual(t, existingResource.GetVersion(), res.GetResource().GetVersion(),
 			"wanted different version for existing and expected resources")
 	}
 }
