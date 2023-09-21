@@ -204,7 +204,7 @@ func (p PodAnnotationProcessor) processLabeledUpstream(pod corev1.Pod, rawUpstre
 // processUnlabeledUpstream processes an upstream in the format:
 // [service-port-name].[service-name].[service-namespace].[service-partition]:[port]:[optional datacenter].
 // There is no unlabeled field for peering.
-// TODO: enable dc and peer support when ready, currently return errors if set. We also most likely won't need to return an error at all.
+// TODO: enable dc and peer support when ready, currently return errors if set.
 func (p PodAnnotationProcessor) processUnlabeledUpstream(pod corev1.Pod, rawUpstream string) (*pbmesh.Upstream, error) {
 	var portName, datacenter, svcName, namespace, partition string
 	var port int32
@@ -225,12 +225,17 @@ func (p PodAnnotationProcessor) processUnlabeledUpstream(pod corev1.Pod, rawUpst
 		case 3:
 			namespace = strings.TrimSpace(pieces[2])
 			fallthrough
-		default:
+		case 2:
 			svcName = strings.TrimSpace(pieces[1])
 			portName = strings.TrimSpace(pieces[0])
+		default:
+			return &pbmesh.Upstream{}, fmt.Errorf("upstream structured incorrectly: %s", rawUpstream)
 		}
 	} else {
 		pieces := strings.SplitN(parts[0], ".", 2)
+		if len(pieces) < 2 {
+			return &pbmesh.Upstream{}, fmt.Errorf("upstream structured incorrectly: %s", rawUpstream)
+		}
 		svcName = strings.TrimSpace(pieces[1])
 		portName = strings.TrimSpace(pieces[0])
 	}
