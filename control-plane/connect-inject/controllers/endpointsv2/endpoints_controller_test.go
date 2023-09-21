@@ -51,6 +51,7 @@ type reconcileCase struct {
 	k8sObjects            func() []runtime.Object
 	existingResource      *pbresource.Resource
 	expectedResource      *pbresource.Resource
+	expectSameVersion     bool // Only checked when existingResource and expectedResource are set.
 	targetConsulNs        string
 	targetConsulPartition string
 	expErr                string
@@ -1277,6 +1278,146 @@ func TestReconcile_UpdateService(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:    "No changes does not write to Consul",
+			svcName: "service-updated",
+			k8sObjects: func() []runtime.Object {
+				pod1 := createServicePodOwnedBy(kindReplicaSet, "service-created-rs-abcde")
+				pod2 := createServicePodOwnedBy(kindReplicaSet, "service-created-rs-abcde")
+				endpoints := &corev1.Endpoints{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "service-updated",
+						Namespace: "default",
+					},
+					Subsets: []corev1.EndpointSubset{
+						{
+							Addresses: addressesForPods(pod1, pod2),
+							Ports: []corev1.EndpointPort{
+								{
+									Name:        "my-http-port",
+									Port:        2345,
+									Protocol:    "TCP",
+									AppProtocol: &appProtocolHttp,
+								},
+								{
+									Name:        "my-grpc-port",
+									Port:        6789,
+									Protocol:    "TCP",
+									AppProtocol: &appProtocolGrpc,
+								},
+							},
+						},
+					},
+				}
+				service := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "service-updated",
+						Namespace: "default",
+					},
+					Spec: corev1.ServiceSpec{
+						ClusterIP: "172.18.0.1",
+						Ports: []corev1.ServicePort{
+							{
+								Name:        "public",
+								Port:        8080,
+								Protocol:    "TCP",
+								TargetPort:  intstr.FromString("my-http-port"),
+								AppProtocol: &appProtocolHttp,
+							},
+							{
+								Name:        "api",
+								Port:        9090,
+								Protocol:    "TCP",
+								TargetPort:  intstr.FromString("my-grpc-port"),
+								AppProtocol: &appProtocolGrpc,
+							},
+						},
+					},
+				}
+				return []runtime.Object{pod1, pod2, endpoints, service}
+			},
+			existingResource: &pbresource.Resource{
+				Id: &pbresource.ID{
+					Name: "service-updated",
+					Type: &pbresource.Type{
+						Group:        "catalog",
+						GroupVersion: "v1alpha1",
+						Kind:         "Service",
+					},
+					Tenancy: &pbresource.Tenancy{
+						Namespace: constants.DefaultConsulNS,
+						Partition: constants.DefaultConsulPartition,
+					},
+				},
+				Data: common.ToProtoAny(&pbcatalog.Service{
+					Ports: []*pbcatalog.ServicePort{
+						{
+							VirtualPort: 8080,
+							TargetPort:  "my-http-port",
+							Protocol:    pbcatalog.Protocol_PROTOCOL_HTTP,
+						},
+						{
+							VirtualPort: 9090,
+							TargetPort:  "my-grpc-port",
+							Protocol:    pbcatalog.Protocol_PROTOCOL_GRPC,
+						},
+						{
+							TargetPort: "mesh",
+							Protocol:   pbcatalog.Protocol_PROTOCOL_MESH,
+						},
+					},
+					Workloads: &pbcatalog.WorkloadSelector{
+						Prefixes: []string{"service-created-rs-abcde"},
+					},
+					VirtualIps: []string{"172.18.0.1"},
+				}),
+				Metadata: map[string]string{
+					constants.MetaKeyKubeNS:    constants.DefaultConsulNS,
+					constants.MetaKeyManagedBy: constants.ManagedByEndpointsValue,
+				},
+			},
+			expectedResource: &pbresource.Resource{
+				Id: &pbresource.ID{
+					Name: "service-updated",
+					Type: &pbresource.Type{
+						Group:        "catalog",
+						GroupVersion: "v1alpha1",
+						Kind:         "Service",
+					},
+					Tenancy: &pbresource.Tenancy{
+						Namespace: constants.DefaultConsulNS,
+						Partition: constants.DefaultConsulPartition,
+					},
+				},
+				Data: common.ToProtoAny(&pbcatalog.Service{
+					Ports: []*pbcatalog.ServicePort{
+						{
+							VirtualPort: 8080,
+							TargetPort:  "my-http-port",
+							Protocol:    pbcatalog.Protocol_PROTOCOL_HTTP,
+						},
+						{
+							VirtualPort: 9090,
+							TargetPort:  "my-grpc-port",
+							Protocol:    pbcatalog.Protocol_PROTOCOL_GRPC,
+						},
+						{
+							TargetPort: "mesh",
+							Protocol:   pbcatalog.Protocol_PROTOCOL_MESH,
+						},
+					},
+					Workloads: &pbcatalog.WorkloadSelector{
+						Prefixes: []string{"service-created-rs-abcde"},
+					},
+					VirtualIps: []string{"172.18.0.1"},
+				}),
+				Metadata: map[string]string{
+					constants.MetaKeyKubeNS:    constants.DefaultConsulNS,
+					constants.MetaKeyManagedBy: constants.ManagedByEndpointsValue,
+				},
+			},
+			expectSameVersion: true,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1577,15 +1718,15 @@ func runReconcileCase(t *testing.T, tc reconcileCase) {
 	}
 	require.False(t, resp.Requeue)
 
-	expectedServiceMatches(t, resourceClient, tc.svcName, tc.targetConsulNs, tc.targetConsulPartition, tc.expectedResource)
+	expectedServiceMatches(t, resourceClient, tc)
 }
 
-func expectedServiceMatches(t *testing.T, client pbresource.ResourceServiceClient, name, namespace, partition string, expectedResource *pbresource.Resource) {
-	req := &pbresource.ReadRequest{Id: getServiceID(name, namespace, partition)}
+func expectedServiceMatches(t *testing.T, client pbresource.ResourceServiceClient, tc reconcileCase) {
+	req := &pbresource.ReadRequest{Id: getServiceID(tc.svcName, tc.targetConsulNs, tc.targetConsulPartition)}
 
 	res, err := client.Read(context.Background(), req)
 
-	if expectedResource == nil {
+	if tc.expectedResource == nil {
 		require.Error(t, err)
 		s, ok := status.FromError(err)
 		require.True(t, ok)
@@ -1598,7 +1739,7 @@ func expectedServiceMatches(t *testing.T, client pbresource.ResourceServiceClien
 	require.NotNil(t, res.GetResource().GetData())
 
 	expectedService := &pbcatalog.Service{}
-	err = anypb.UnmarshalTo(expectedResource.Data, expectedService, proto.UnmarshalOptions{})
+	err = anypb.UnmarshalTo(tc.expectedResource.Data, expectedService, proto.UnmarshalOptions{})
 	require.NoError(t, err)
 
 	actualService := &pbcatalog.Service{}
@@ -1607,6 +1748,14 @@ func expectedServiceMatches(t *testing.T, client pbresource.ResourceServiceClien
 
 	if diff := cmp.Diff(expectedService, actualService, test.CmpProtoIgnoreOrder()...); diff != "" {
 		t.Errorf("unexpected difference:\n%v", diff)
+	}
+
+	if tc.expectSameVersion {
+		require.Equal(t, res.GetResource().GetVersion(), res.GetResource().GetVersion(),
+			"wanted same version for existing and expected resources")
+	} else if tc.existingResource != nil && tc.expectedResource != nil {
+		require.NotEqual(t, res.GetResource().GetVersion(), res.GetResource().GetVersion(),
+			"wanted different version for existing and expected resources")
 	}
 }
 
