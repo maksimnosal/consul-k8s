@@ -5,7 +5,9 @@ package endpointsv2
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net"
 	"sort"
 	"strings"
@@ -14,6 +16,9 @@ import (
 	pbcatalog "github.com/hashicorp/consul/proto-public/pbcatalog/v2beta1"
 	"github.com/hashicorp/consul/proto-public/pbresource"
 	"github.com/hashicorp/go-multierror"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -112,7 +117,7 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// Register the service in Consul.
 	//TODO: Maybe check service-enable label here on service/deployments/other pod owners
-	if err = r.registerService(ctx, resourceClient, service, consulSvc); err != nil {
+	if err = r.ensureService(ctx, resourceClient, service, consulSvc); err != nil {
 		// We could be racing with the namespace controller.
 		// Requeue (which includes backoff) to try again.
 		if inject.ConsulNamespaceIsNotFound(err) {
@@ -263,34 +268,56 @@ func getOwnerPrefixFromPod(pod *corev1.Pod) string {
 	return ""
 }
 
-// registerService creates a Consul service registration from the provided Kuberetes service and endpoint information.
-func (r *Controller) registerService(ctx context.Context, resourceClient pbresource.ResourceServiceClient, k8sService corev1.Service, consulSvc *pbcatalog.Service) error {
-	consulSvcResource := r.getServiceResource(
-		consulSvc,
+// ensureService upserts a Consul service registration from the provided service information if a matching service
+// resource does not already exist in Consul.
+func (r *Controller) ensureService(ctx context.Context, resourceClient pbresource.ResourceServiceClient, k8sService corev1.Service, consulSvc *pbcatalog.Service) error {
+	var consulSvcMsg proto.Message = consulSvc
+	id := getServiceID(
 		k8sService.Name, // Consul and Kubernetes service name will always match
 		r.getConsulNamespace(k8sService.Namespace),
-		r.getConsulPartition(),
-		getServiceMeta(k8sService),
-	)
+		r.getConsulPartition())
 
-	r.Log.Info("registering service with Consul", getLogFieldsForResource(consulSvcResource.Id)...)
-	//TODO: Maybe attempt to debounce redundant writes. For now, we blindly rewrite state on each reconcile.
-	_, err := resourceClient.Write(ctx, &pbresource.WriteRequest{Resource: consulSvcResource})
+	// We use the locally-created Resource and ID (without Uid and Version)
+	// when writing so that it behaves as an upsert rather than CAS.
+	consulSvcResource := &pbresource.Resource{
+		Id:       id,
+		Data:     inject.ToProtoAny(consulSvcMsg),
+		Metadata: getServiceMeta(k8sService),
+	}
+
+	writeHash := getWriteHashForResource(consulSvcResource)
+	if r.writeHashAndGenerationMatch(ctx, resourceClient, k8sService.ObjectMeta, writeHash, id) {
+		r.Log.V(1).Info("skipping service write due to matching write hash")
+		return nil
+	}
+
+	r.Log.Info("writing service to Consul", getLogFieldsForResource(consulSvcResource.Id)...)
+	resp, err := resourceClient.Write(ctx, &pbresource.WriteRequest{Resource: consulSvcResource})
 	if err != nil {
-		r.Log.Error(err, fmt.Sprintf("failed to register service: %+v", consulSvc), getLogFieldsForResource(consulSvcResource.Id)...)
+		r.Log.Error(err, fmt.Sprintf("failed to write service: %+v", consulSvc),
+			getLogFieldsForResource(consulSvcResource.Id)...)
+		return err
+	}
+
+	//TODO wrap all this in a helper struct
+	generation := resp.GetResource().GetGeneration()
+	r.Log.Info("storing write hash and generation on Kubernetes resource", "hash", writeHash, "generation", generation)
+	//TODO add perms to do so to... wherever
+	patch := client.StrategicMergeFrom(k8sService.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	if err := r.Client.Patch(ctx, &k8sService, patch); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// getServiceResource converts the given Consul service and metadata to a Consul resource API record.
-func (r *Controller) getServiceResource(svc *pbcatalog.Service, name, namespace, partition string, meta map[string]string) *pbresource.Resource {
-	return &pbresource.Resource{
-		Id:       getServiceID(name, namespace, partition),
-		Data:     inject.ToProtoAny(svc),
-		Metadata: meta,
+func addWriteAnnotations(s *metav1.ObjectMeta, hash, generation string) {
+	if s.Annotations == nil {
+		s.Annotations = make(map[string]string)
 	}
+	//TODO maybe combine these
+	s.Annotations[constants.AnnotationWriteHash] = hash
+	s.Annotations[constants.AnnotationWriteGeneration] = generation
 }
 
 func getServiceID(name, namespace, partition string) *pbresource.ID {
@@ -510,6 +537,45 @@ func (r *Controller) getConsulPartition() string {
 		return constants.DefaultConsulPartition
 	}
 	return r.ConsulPartition
+}
+
+// getWriteHash gets a hash of the given proto message for deduplicating writes to Consul.
+// This hash is not intended to be cryptographically secure, only deterministic and collision-resistent for tens of
+// thousands of values.
+func getWriteHashForResource(resource *pbresource.Resource) string {
+	//TODO maybe use a different hash, and one that isn't environment-dependent as this is on boring being enabled.
+	return fmt.Sprintf("type='%s',hash=%x", resource.Id.Type, sha256.Sum256(resource.Data.Value))
+}
+
+// writeHashAndGenerationMatch detemines whether the given resource should be written to Consul based on the existing
+// write hash and generation stored in the Kubernetes object annotations. Returns true iff. the existing hash in
+// Kubernetes matches the one computed from the resource and the existing generation in Kubernetes matches the
+// generation of the resource in Consul. The hash is checked first to avoid an unnecesary fetch from Consul. While not
+// strictly necessary assuming that `consul-k8s` is the sole writer of the resource, the generation check ensures that
+// the resource is kept in sync even if externally modified.
+func (r *Controller) writeHashAndGenerationMatch(ctx context.Context, resourceClient pbresource.ResourceServiceClient, meta metav1.ObjectMeta, writeHash string, id *pbresource.ID) bool {
+	lastHash := ""
+	lastGeneration := ""
+	if meta.Annotations != nil {
+		lastHash, _ = meta.Annotations[constants.AnnotationWriteHash]
+		lastGeneration, _ = meta.Annotations[constants.AnnotationWriteGeneration]
+	}
+
+	if lastHash == "" || lastGeneration == "" || lastHash != writeHash {
+		return false
+	}
+
+	// Check for whether an update is necessary by reading the existing resource from Consul, if it exists.
+	// If the read fails, writing is not likely to succeed either, but we attempt it in case of a persistent read error
+	// or permissions issue that does not impact writing. If writing fails as well, we'll back off due to that error.
+	resp, err := resourceClient.Read(ctx, &pbresource.ReadRequest{Id: id})
+	if s, ok := status.FromError(err); !ok || (s.Code() != codes.OK && s.Code() != codes.NotFound) {
+		r.Log.Error(err, "failed to read existing resource from Consul; assuming it is out of sync",
+			append(getLogFieldsForResource(id), "code", s.Code(), "message", s.Message())...)
+		return false
+	}
+
+	return resp.GetResource().GetGeneration() == lastGeneration
 }
 
 func getLogFieldsForResource(id *pbresource.ID) []any {

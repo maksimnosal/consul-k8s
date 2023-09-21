@@ -245,6 +245,20 @@ const (
 	// is mounted to other containers in the pod. It is a comma-separated list of container names
 	// to mount the volume on. It will be mounted at the path `/consul/mesh-inject`.
 	AnnotationMeshInjectMountVolumes = "consul.hashicorp.com/mesh-inject-mount-volume"
+
+	// AnnotationWriteHash is the key of the annotation that represents the deterministic
+	// hash of the last write payload used by an owning controller to write a resource to Consul.
+	// This allows controllers to deduplicate writes without duplicating defaulting logic for
+	// resource fields. The implementation details of this value are subject to change and
+	// should not be relied on or considered stable.
+	AnnotationWriteHash = "consul.hashicorp.com/consul-write-hash"
+
+	// AnnotationWriteGeneration is the key of the annotation that represents the generation of
+	// the last resource payload written by an owning controller to Consul.
+	// This allows controllers to deduplicate writes without duplicating defaulting logic for
+	// resource fields. The implementation details of this value are subject to change and
+	// should not be relied on or considered stable.
+	AnnotationWriteGeneration = "consul.hashicorp.com/consul-write-generation"
 )
 
 // Annotations used by Prometheus.
