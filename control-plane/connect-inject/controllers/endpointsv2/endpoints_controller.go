@@ -11,6 +11,10 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -112,7 +116,7 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// Register the service in Consul.
 	//TODO: Maybe check service-enable label here on service/deployments/other pod owners
-	if err = r.registerService(ctx, resourceClient, service, consulSvc); err != nil {
+	if err = r.ensureService(ctx, resourceClient, service, consulSvc); err != nil {
 		// We could be racing with the namespace controller.
 		// Requeue (which includes backoff) to try again.
 		if common.ConsulNamespaceIsNotFound(err) {
@@ -263,34 +267,64 @@ func getOwnerPrefixFromPod(pod *corev1.Pod) string {
 	return ""
 }
 
-// registerService creates a Consul service registration from the provided Kuberetes service and endpoint information.
-func (r *Controller) registerService(ctx context.Context, resourceClient pbresource.ResourceServiceClient, k8sService corev1.Service, consulSvc *pbcatalog.Service) error {
-	consulSvcResource := r.getServiceResource(
-		consulSvc,
+// ensureService upserts a Consul service registration from the provided service information if a matching service
+// resource does not already exist in Consul.
+func (r *Controller) ensureService(ctx context.Context, resourceClient pbresource.ResourceServiceClient, k8sService corev1.Service, consulSvc *pbcatalog.Service) error {
+	var consulSvcMsg proto.Message = consulSvc
+	id := getServiceID(
 		k8sService.Name, // Consul and Kubernetes service name will always match
 		r.getConsulNamespace(k8sService.Namespace),
-		r.getConsulPartition(),
-		getServiceMeta(k8sService),
-	)
+		r.getConsulPartition())
 
-	r.Log.Info("registering service with Consul", getLogFieldsForResource(consulSvcResource.Id)...)
-	//TODO: Maybe attempt to debounce redundant writes. For now, we blindly rewrite state on each reconcile.
-	_, err := resourceClient.Write(ctx, &pbresource.WriteRequest{Resource: consulSvcResource})
+	// Check for whether an update is necessary by reading the existing resource from Consul, if it exists.
+	// If the read fails, writing is not likely to succeed either, but we attempt it in case of a persistent read error
+	// or permissions issue that does not impact writing. If writing fails as well, we'll back off due to that error.
+	resp, err := resourceClient.Read(ctx, &pbresource.ReadRequest{Id: id})
+	if s, ok := status.FromError(err); !ok || (s.Code() != codes.OK && s.Code() != codes.NotFound) {
+		r.Log.Error(err, "failed to read existing resource from Consul", append(getLogFieldsForResource(id),
+			"code", s.Code(), "message", s.Message())...)
+	}
+
+	// Apply updates to existing resource (or empty if read failed).
+	// If no updates were made, skip write.
+	if resp.GetResource().GetData() != nil {
+		existing := &pbcatalog.Service{}
+		opts := proto.UnmarshalOptions{DiscardUnknown: true}
+		if err := anypb.UnmarshalTo(resp.GetResource().GetData(), existing, opts); err != nil {
+			r.Log.Error(err, "failed to decode fetched resource from Consul", getLogFieldsForResource(id)...)
+		}
+
+		// Note: This is a strict comparison including the order of repeated fields.
+		// If in the future other systems are allowed to modify services in addition to this controller,
+		// we'll likely need to come up with a better strategy.
+		//TODO(NET-5681) instead of workarounds for field-by-field comparison, we should
+		// eventually write a deterministic hash of the raw write payload and compare
+		// that against the potential update.
+		if proto.Equal(existing, consulSvc) {
+			r.Log.V(1).Info("skipping writing service to Consul: no change detected",
+				getLogFieldsForResource(id)...)
+			return nil
+		}
+	}
+
+	// We're handling either a new or updated record, so time to actually write it.
+	// We use the locally-created Resource and ID (without Uid and Version/Generation)
+	// so that it behaves as an upsert rather than CAS.
+	consulSvcResource := &pbresource.Resource{
+		Id:       id,
+		Data:     common.ToProtoAny(consulSvcMsg),
+		Metadata: getServiceMeta(k8sService),
+	}
+
+	r.Log.Info("writing service to Consul", getLogFieldsForResource(consulSvcResource.Id)...)
+	_, err = resourceClient.Write(ctx, &pbresource.WriteRequest{Resource: consulSvcResource})
 	if err != nil {
-		r.Log.Error(err, fmt.Sprintf("failed to register service: %+v", consulSvc), getLogFieldsForResource(consulSvcResource.Id)...)
+		r.Log.Error(err, fmt.Sprintf("failed to write service: %+v", consulSvc),
+			getLogFieldsForResource(consulSvcResource.Id)...)
 		return err
 	}
 
 	return nil
-}
-
-// getServiceResource converts the given Consul service and metadata to a Consul resource API record.
-func (r *Controller) getServiceResource(svc *pbcatalog.Service, name, namespace, partition string, meta map[string]string) *pbresource.Resource {
-	return &pbresource.Resource{
-		Id:       getServiceID(name, namespace, partition),
-		Data:     common.ToProtoAny(svc),
-		Metadata: meta,
-	}
 }
 
 func getServiceID(name, namespace, partition string) *pbresource.ID {
@@ -321,10 +355,24 @@ func getServicePorts(service corev1.Service, prefixedPods selectorPodData, exact
 		//
 		// If we otherwise see repeat port values in a K8s service, we pass along and allow Consul to fail validation.
 		if p.Protocol == corev1.ProtocolTCP {
+			consulPortProtocol := common.GetPortProtocol(p.AppProtocol)
+			// Default the protocol to TCP if unspecified.
+			//
+			// This works around the issue of Consul defaulting certain unspecified
+			// fields on read, which makes it impossible to do simple comparisons of
+			// existing vs. updates for avoiding needless writes to Consul. While not
+			// ideal, it's simpler than trying to do a custom comparison field-by-field.
+			//
+			//TODO(NET-5681) instead of workarounds for field-by-field comparison, we should
+			// eventually write a deterministic hash of the raw write payload and compare
+			// that against the potential update.
+			if consulPortProtocol == pbcatalog.Protocol_PROTOCOL_UNSPECIFIED {
+				consulPortProtocol = pbcatalog.Protocol_PROTOCOL_TCP
+			}
 			ports = append(ports, &pbcatalog.ServicePort{
 				VirtualPort: uint32(p.Port),
 				TargetPort:  getEffectiveTargetPort(p.TargetPort, prefixedPods, exactNamePods),
-				Protocol:    common.GetPortProtocol(p.AppProtocol),
+				Protocol:    consulPortProtocol,
 			})
 		}
 	}

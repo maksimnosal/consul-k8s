@@ -281,9 +281,12 @@ func SetupK8sAuthMethodWithNamespaces(t *testing.T, consulClient *api.Client, se
 // ResourceHasPersisted checks that a recently written resource exists in the Consul
 // state store with a valid version. This must be true before a resource is overwritten
 // or deleted.
-func ResourceHasPersisted(t *testing.T, client pbresource.ResourceServiceClient, id *pbresource.ID) {
+//
+// If successful, returns the resource as it was read from Consul.
+func ResourceHasPersisted(t *testing.T, client pbresource.ResourceServiceClient, id *pbresource.ID) *pbresource.Resource {
 	req := &pbresource.ReadRequest{Id: id}
 
+	var existing *pbresource.Resource
 	require.Eventually(t, func() bool {
 		res, err := client.Read(context.Background(), req)
 		if err != nil {
@@ -293,10 +296,13 @@ func ResourceHasPersisted(t *testing.T, client pbresource.ResourceServiceClient,
 		if res.GetResource().GetVersion() == "" {
 			return false
 		}
+		existing = res.GetResource()
 
 		return true
 	}, 5*time.Second,
 		time.Second)
+
+	return existing
 }
 
 func TokenReviewsResponse(name, ns string) string {
