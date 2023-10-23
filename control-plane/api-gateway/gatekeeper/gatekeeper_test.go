@@ -1015,6 +1015,8 @@ func validateResourcesExist(t *testing.T, client client.Client, resources resour
 			if container.Image == dataplaneImage {
 				hasDataplaneContainer = true
 				require.NotNil(t, container.SecurityContext)
+				require.NotNil(t, container.SecurityContext.AllowPrivilegeEscalation)
+				assert.False(t, *container.SecurityContext.AllowPrivilegeEscalation)
 				require.NotNil(t, container.SecurityContext.Capabilities)
 				require.NotNil(t, container.SecurityContext.RunAsNonRoot)
 				assert.True(t, *container.SecurityContext.RunAsNonRoot)
