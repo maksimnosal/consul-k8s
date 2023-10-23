@@ -5,8 +5,8 @@ go 1.20
 require (
 	github.com/gruntwork-io/terratest v0.31.2
 	github.com/hashicorp/consul-k8s/control-plane v0.0.0-20230609143603-198c4433d892
-	github.com/hashicorp/consul/api v1.10.1-0.20230906155245-56917eb4c968
-	github.com/hashicorp/consul/sdk v0.14.1
+	github.com/hashicorp/consul/api v1.26.1-rc1
+	github.com/hashicorp/consul/sdk v0.14.3-rc1
 	github.com/hashicorp/go-uuid v1.0.3
 	github.com/hashicorp/go-version v1.6.0
 	github.com/hashicorp/hcp-sdk-go v0.50.0
