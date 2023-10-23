@@ -1,0 +1,3 @@
+```release-note:improvement
+api-gateway: Stop running api-gateway as root user when deploying to Kubernetes
+```
