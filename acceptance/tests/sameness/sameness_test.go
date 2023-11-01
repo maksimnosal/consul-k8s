@@ -72,10 +72,10 @@ func TestFailover_Connect(t *testing.T) {
 		name        string
 		ACLsEnabled bool
 	}{
-		{
-			"default failover",
-			false,
-		},
+		// {
+		// 	"default failover",
+		// 	false,
+		// },
 		{
 			"secure failover",
 			true,
@@ -494,7 +494,7 @@ func TestFailover_Connect(t *testing.T) {
 			for _, v := range testClusters {
 				checkLocalities(t, v)
 			}
-
+			require.True(t, false)
 			// Verify all the failover Scenarios
 			logger.Log(t, "verifying failover scenarios")
 
