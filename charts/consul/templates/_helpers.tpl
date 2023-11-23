@@ -185,6 +185,10 @@ but if it's reduced by more than 1, the quorum size can change so that's why thi
 {{- end -}}
 {{- end -}}
 
+{{- define "consul.server.autopilotMinQuorum" -}}
+{{- add (div (int .Values.server.replicas) 2) 1 -}}
+{{- end -}}
+
 {{- define "consul.pdb.connectInject.maxUnavailable" -}}
 {{- if eq (int .Values.connectInject.replicas) 1 -}}
 {{ 0 }}

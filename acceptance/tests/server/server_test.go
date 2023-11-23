@@ -80,6 +80,6 @@ func TestServerRestart(t *testing.T) {
 
 	require.NoError(t, unmarshallErrs, "there were some json unmarshall errors, this is likely a bug")
 
-	logger.Logf(t, "restart took %s, there were %d seconds without quorum", time.Now().Sub(start), noQuorumCount)
+	logger.Logf(t, "restart took %s, there were %d seconds without quorum", time.Since(start), noQuorumCount)
 	require.Equal(t, 0, noQuorumCount, "there was %d seconds without quorum", noQuorumCount)
 }
