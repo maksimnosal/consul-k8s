@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/sdk/testutil"
+	"github.com/hashicorp/consul/sdk/testutil/retry"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -982,6 +983,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 			},
 			k8sObjects: func() []runtime.Object {
 				pod1 := createServicePod("pod1", "1.2.3.4", true, true)
+				pod1.Annotations[constants.AnnotationXDSFetchTimeoutMs] = "9999"
 				endpoint := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "service-created",
@@ -1030,7 +1032,10 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 						DestinationServiceID:   "pod1-service-created",
 						LocalServiceAddress:    "",
 						LocalServicePort:       0,
-						Config:                 map[string]any{"envoy_telemetry_collector_bind_socket_dir": string("/consul/connect-inject")},
+						Config: map[string]any{
+							"envoy_telemetry_collector_bind_socket_dir": string("/consul/connect-inject"),
+							"xds_fetch_timeout_ms":                      float64(9999),
+						},
 					},
 					ServiceMeta: map[string]string{constants.MetaKeyPodName: "pod1", metaKeyKubeServiceName: "service-created", constants.MetaKeyKubeNS: "default", metaKeyManagedBy: constants.ManagedByValue, metaKeySyntheticNode: "true"},
 					ServiceTags: []string{},
@@ -1075,6 +1080,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 					constants.AnnotationGatewayWANAddress:        "2.3.4.5",
 					constants.AnnotationGatewayWANPort:           "443",
 					constants.AnnotationMeshGatewayContainerPort: "8443",
+					constants.AnnotationXDSFetchTimeoutMs:        "9999",
 					constants.AnnotationGatewayKind:              meshGateway})
 				endpoint := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1117,7 +1123,10 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 						},
 					},
 					ServiceProxy: &api.AgentServiceConnectProxyConfig{
-						Config: map[string]any{"envoy_telemetry_collector_bind_socket_dir": string("/consul/service")},
+						Config: map[string]any{
+							"envoy_telemetry_collector_bind_socket_dir": string("/consul/service"),
+							"xds_fetch_timeout_ms":                      float64(9999),
+						},
 					},
 					NodeMeta: map[string]string{
 						"synthetic-node": "true",
@@ -1291,6 +1300,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 				gateway := createGatewayPod("terminating-gateway", "1.2.3.4", map[string]string{
 					constants.AnnotationGatewayKind:              terminatingGateway,
 					constants.AnnotationGatewayConsulServiceName: "terminating-gateway",
+					constants.AnnotationXDSFetchTimeoutMs:        "9999",
 				})
 				endpoint := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1329,7 +1339,10 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 					},
 					ServiceTags: []string{},
 					ServiceProxy: &api.AgentServiceConnectProxyConfig{
-						Config: map[string]any{"envoy_telemetry_collector_bind_socket_dir": string("/consul/service")},
+						Config: map[string]any{
+							"envoy_telemetry_collector_bind_socket_dir": string("/consul/service"),
+							"xds_fetch_timeout_ms":                      float64(9999),
+						},
 					},
 				},
 			},
@@ -1421,6 +1434,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 					constants.AnnotationGatewayKind:              ingressGateway,
 					constants.AnnotationGatewayWANSource:         "Service",
 					constants.AnnotationGatewayWANPort:           "8443",
+					constants.AnnotationXDSFetchTimeoutMs:        "9999",
 				})
 				endpoint := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1495,6 +1509,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 								},
 							},
 							"envoy_telemetry_collector_bind_socket_dir": "/consul/service",
+							"xds_fetch_timeout_ms":                      float64(9999),
 						},
 					},
 				},
@@ -3532,8 +3547,11 @@ func TestReconcileUpdateEndpoint(t *testing.T) {
 
 			// Register service and proxy in consul.
 			for _, svc := range tt.initialConsulSvcs {
-				_, err := consulClient.Catalog().Register(svc, nil)
-				require.NoError(t, err)
+				// Retry because ACLs may not have been initialized yet.
+				retry.Run(t, func(r *retry.R) {
+					_, err := consulClient.Catalog().Register(svc, nil)
+					require.NoError(r, err)
+				})
 
 				// Create a token for this service if ACLs are enabled.
 				if tt.enableACLs {
@@ -4171,6 +4189,7 @@ func TestReconcileDeleteEndpoint(t *testing.T) {
 
 			// Register service and proxy in consul
 			var token *api.ACLToken
+			var err error
 			for _, svc := range tt.initialConsulSvcs {
 				serviceRegistration := &api.CatalogRegistration{
 					Node:    consulNodeName,
@@ -4180,8 +4199,11 @@ func TestReconcileDeleteEndpoint(t *testing.T) {
 					},
 					Service: svc,
 				}
-				_, err := consulClient.Catalog().Register(serviceRegistration, nil)
-				require.NoError(t, err)
+				// Retry because the ACLs may not have been fully initialized yet.
+				retry.Run(t, func(r *retry.R) {
+					_, err = consulClient.Catalog().Register(serviceRegistration, nil)
+					require.NoError(r, err)
+				})
 
 				// Create a token for it if ACLs are enabled.
 				if tt.enableACLs {

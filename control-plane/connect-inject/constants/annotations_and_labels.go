@@ -73,6 +73,11 @@ const (
 	// connections to.
 	AnnotationPort = "consul.hashicorp.com/connect-service-port"
 
+	// AnnotationXDSFetchTimeoutMs is a millisecond timeout to apply to the local Envoy instance
+	// when fetching xDS data (EDS, etc). This field should be specified on pods and will be added
+	// to their proxy configuration during service registration.
+	AnnotationXDSFetchTimeoutMs = "consul.hashicorp.com/xds-fetch-timeout-ms"
+
 	// AnnotationUpstreams is a list of upstreams to register with the
 	// proxy in the format of `<service-name>:<local-port>,...`. The
 	// service name should map to a Consul service name and the local port
