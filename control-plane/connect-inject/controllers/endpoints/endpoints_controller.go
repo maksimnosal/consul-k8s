@@ -43,6 +43,7 @@ const (
 	ingressGateway     = "ingress-gateway"
 
 	kubernetesSuccessReasonMsg           = "Kubernetes health checks passing"
+	xdsFetchTimeoutMs                    = "xds_fetch_timeout_ms"
 	envoyPrometheusBindAddr              = "envoy_prometheus_bind_addr"
 	envoyTelemetryCollectorBindSocketDir = "envoy_telemetry_collector_bind_socket_dir"
 	defaultNS                            = "default"
@@ -374,6 +375,15 @@ func proxyServiceID(pod corev1.Pod, serviceEndpoints corev1.Endpoints) string {
 	return fmt.Sprintf("%s-%s", pod.Name, proxySvcName)
 }
 
+func annotationXDSFetchTimeoutMs(pod corev1.Pod) *int {
+	if timeout, ok := pod.Annotations[constants.AnnotationXDSFetchTimeoutMs]; ok && timeout != "" {
+		if val, err := strconv.Atoi(timeout); err == nil {
+			return &val
+		}
+	}
+	return nil
+}
+
 // createServiceRegistrations creates the service and proxy service instance registrations with the information from the
 // Pod.
 func (r *Controller) createServiceRegistrations(pod corev1.Pod, serviceEndpoints corev1.Endpoints, healthStatus string) (*api.CatalogRegistration, *api.CatalogRegistration, error) {
@@ -479,6 +489,10 @@ func (r *Controller) createServiceRegistrations(pod corev1.Pod, serviceEndpoints
 
 	if r.EnableTelemetryCollector && proxyConfig.Config != nil {
 		proxyConfig.Config[envoyTelemetryCollectorBindSocketDir] = "/consul/connect-inject"
+	}
+
+	if t := annotationXDSFetchTimeoutMs(pod); t != nil && proxyConfig.Config != nil {
+		proxyConfig.Config[xdsFetchTimeoutMs] = *t
 	}
 
 	if consulServicePort > 0 {
@@ -765,6 +779,10 @@ func (r *Controller) createGatewayRegistrations(pod corev1.Pod, serviceEndpoints
 
 	if r.EnableTelemetryCollector && service.Proxy != nil && service.Proxy.Config != nil {
 		service.Proxy.Config[envoyTelemetryCollectorBindSocketDir] = "/consul/service"
+	}
+
+	if t := annotationXDSFetchTimeoutMs(pod); t != nil && service.Proxy.Config != nil {
+		service.Proxy.Config[xdsFetchTimeoutMs] = *t
 	}
 
 	serviceRegistration := &api.CatalogRegistration{
