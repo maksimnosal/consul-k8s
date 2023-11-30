@@ -123,7 +123,7 @@ func NewHelmCluster(
 	}
 }
 
-func (h *HelmCluster) Create(t terratesting.TestingT) {
+func (h *HelmCluster) Create(t *testing.T) {
 	// Make sure we delete the cluster if we receive an interrupt signal and
 	// register cleanup so that we delete the cluster when test finishes.
 	helpers.Cleanup(t, h.noCleanupOnFailure, h.noCleanup, func() {
@@ -520,7 +520,8 @@ func configurePodSecurityPolicies(t terratesting.TestingT, client kubernetes.Int
 		}
 	}
 
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	tt, _ := t.(*testing.T) // TODO this is bad
+	helpers.Cleanup(tt, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		_ = client.PolicyV1beta1().PodSecurityPolicies().Delete(context.Background(), pspName, metav1.DeleteOptions{})
 		_ = client.RbacV1().ClusterRoles().Delete(context.Background(), pspName, metav1.DeleteOptions{})
 		_ = client.RbacV1().RoleBindings(namespace).Delete(context.Background(), pspName, metav1.DeleteOptions{})

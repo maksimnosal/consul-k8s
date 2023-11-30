@@ -5,6 +5,7 @@ package k8s
 
 import (
 	"fmt"
+	terratesting "github.com/gruntwork-io/terratest/modules/testing"
 	"strings"
 	"testing"
 	"time"
@@ -34,14 +35,14 @@ var kubeAPIConnectErrs = []string{
 
 // RunKubectlAndGetOutputE runs an arbitrary kubectl command provided via args
 // and returns its output and error.
-func RunKubectlAndGetOutputE(t *testing.T, options *k8s.KubectlOptions, args ...string) (string, error) {
+func RunKubectlAndGetOutputE(t terratesting.TestingT, options *k8s.KubectlOptions, args ...string) (string, error) {
 	return RunKubectlAndGetOutputWithLoggerE(t, options, terratestLogger.New(logger.TestLogger{}), args...)
 }
 
 // RunKubectlAndGetOutputWithLoggerE is the same as RunKubectlAndGetOutputE but
 // it also allows you to provide a custom logger. This is useful if the command output
 // contains sensitive information, for example, when you can pass logger.Discard.
-func RunKubectlAndGetOutputWithLoggerE(t *testing.T, options *k8s.KubectlOptions, logger *terratestLogger.Logger, args ...string) (string, error) {
+func RunKubectlAndGetOutputWithLoggerE(t terratesting.TestingT, options *k8s.KubectlOptions, logger *terratestLogger.Logger, args ...string) (string, error) {
 	var cmdArgs []string
 	if options.ContextName != "" {
 		cmdArgs = append(cmdArgs, "--context", options.ContextName)
@@ -66,7 +67,9 @@ func RunKubectlAndGetOutputWithLoggerE(t *testing.T, options *k8s.KubectlOptions
 	}
 	var output string
 	var err error
-	retry.RunWith(counter, t, func(r *retry.R) {
+
+	tt, _ := t.(*testing.T) // TODO this is bad
+	retry.RunWith(counter, tt, func(r *retry.R) {
 		output, err = shell.RunCommandAndGetOutputE(r, command)
 		if err != nil {
 			// Want to retry on errors connecting to actual Kube API because

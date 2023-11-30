@@ -422,7 +422,7 @@ func (v *VaultCluster) initAndUnseal(t *testing.T) {
 		require.Equal(r, corev1.PodRunning, serverPod.Status.Phase)
 
 		// Set up the client so that we can make API calls to initialize and unseal.
-		v.vaultClient = v.SetupVaultClient(r)
+		v.vaultClient = v.SetupVaultClient(t)
 
 		// Initialize Vault with 1 secret share. We don't need to
 		// more key shares for this test installation.

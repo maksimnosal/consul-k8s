@@ -646,7 +646,7 @@ func (c *cluster) serviceTargetCheck(t *testing.T, expectedName string, curlAddr
 	retry.RunWith(timer, t, func(r *retry.R) {
 		// Use -s/--silent and -S/--show-error flags w/ curl to reduce noise during retries.
 		// This silences extra output like the request progress bar, but preserves errors.
-		resp, err = k8s.RunKubectlAndGetOutputE(t, c.clientOpts, "exec", "-i",
+		resp, err = k8s.RunKubectlAndGetOutputE(r, c.clientOpts, "exec", "-i",
 			staticClientDeployment, "-c", staticClientName, "--", "curl", "-sS", curlAddress)
 		require.NoError(r, err)
 		assert.Contains(r, resp, expectedName)
@@ -697,7 +697,7 @@ func (c *cluster) dnsFailoverCheck(t *testing.T, cfg *config.TestConfig, release
 		// the context can be used to determine that failover occured to the expected kubernetes cluster
 		// hosting Consul
 		assert.Contains(r, logs, "ADDITIONAL SECTION:")
-		expectedName := failover.context.KubectlOptions(t).ContextName
+		expectedName := failover.context.KubectlOptions(r).ContextName
 		if cfg.UseKind {
 			expectedName = strings.Replace(expectedName, "kind-", "", -1)
 		}
@@ -712,7 +712,7 @@ func (c *cluster) getPeeringAcceptorSecret(t *testing.T, cfg *config.TestConfig,
 	timer := &retry.Timer{Timeout: retryTimeout, Wait: 1 * time.Second}
 	retry.RunWith(timer, t, func(r *retry.R) {
 		var err error
-		acceptorSecretName, err = k8s.RunKubectlAndGetOutputE(t, c.context.KubectlOptions(t), "get", "peeringacceptor", acceptorName, "-o", "jsonpath={.status.secret.name}")
+		acceptorSecretName, err = k8s.RunKubectlAndGetOutputE(r, c.context.KubectlOptions(r), "get", "peeringacceptor", acceptorName, "-o", "jsonpath={.status.secret.name}")
 		require.NoError(r, err)
 		require.NotEmpty(r, acceptorSecretName)
 	})
