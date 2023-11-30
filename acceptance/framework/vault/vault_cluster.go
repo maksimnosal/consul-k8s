@@ -149,7 +149,7 @@ func (v *VaultCluster) SetupVaultClient(t *testing.T) *vapi.Client {
 		// NOTE: It's okay to pass in `t` to ForwardPortE despite being in a retry
 		// because we're using ForwardPortE (not ForwardPort) so the `t` won't
 		// get used to fail the test, just for logging.
-		require.NoError(r, tunnel.ForwardPortE(t))
+		require.NoError(r, tunnel.ForwardPortE(r))
 	})
 
 	t.Cleanup(func() {
@@ -201,7 +201,7 @@ func (v *VaultCluster) bootstrap(t *testing.T, vaultNamespace string) {
 				},
 				Type: corev1.SecretTypeServiceAccountToken,
 			}, metav1.CreateOptions{})
-			require.NoError(t, err)
+			require.NoError(r, err)
 		}
 	})
 	v.ConfigureAuthMethod(t, v.vaultClient, "kubernetes", "https://kubernetes.default.svc", vaultServerServiceAccountName, namespace)
@@ -422,7 +422,7 @@ func (v *VaultCluster) initAndUnseal(t *testing.T) {
 		require.Equal(r, corev1.PodRunning, serverPod.Status.Phase)
 
 		// Set up the client so that we can make API calls to initialize and unseal.
-		v.vaultClient = v.SetupVaultClient(t)
+		v.vaultClient = v.SetupVaultClient(r)
 
 		// Initialize Vault with 1 secret share. We don't need to
 		// more key shares for this test installation.
