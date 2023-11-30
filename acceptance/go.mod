@@ -2,6 +2,8 @@ module github.com/hashicorp/consul-k8s/acceptance
 
 go 1.20
 
+replace github.com/hashicorp/consul/sdk => github.com/hashicorp/consul/sdk v0.4.1-0.20231130173447-f44a9e1729df
+
 require (
 	github.com/gruntwork-io/terratest v0.31.2
 	github.com/hashicorp/consul-k8s/control-plane v0.0.0-20230609143603-198c4433d892
