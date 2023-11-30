@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	terratestTesting "github.com/gruntwork-io/terratest/modules/testing"
 )
 
 // TestLogger implements terratest's TestLogger interface
@@ -17,14 +15,9 @@ import (
 type TestLogger struct{}
 
 // Logf takes a format string and args and calls Logf function.
-func (tl TestLogger) Logf(t terratestTesting.TestingT, format string, args ...interface{}) {
-	tt, ok := t.(*testing.T)
-	if !ok {
-		t.Error("failed to cast")
-	}
-	tt.Helper()
-
-	Logf(tt, format, args...)
+func (tl TestLogger) Logf(t *testing.T, format string, args ...interface{}) {
+	t.Helper()
+	Logf(t, format, args...)
 }
 
 // Logf takes a format string and args and logs

@@ -43,7 +43,7 @@ func CheckForPriorInstallations(t *testing.T, client kubernetes.Interface, optio
 		// NOTE: It's okay to pass in `t` to RunHelmCommandAndGetOutputE despite being in a retry
 		// because we're using RunHelmCommandAndGetOutputE (not RunHelmCommandAndGetOutput) so the `t` won't
 		// get used to fail the test, just for logging.
-		helmListOutput, err = helm.RunHelmCommandAndGetOutputE(t, options, "list", "--output", "json")
+		helmListOutput, err = helm.RunHelmCommandAndGetOutputE(r, options, "list", "--output", "json")
 		require.NoError(r, err)
 	})
 
