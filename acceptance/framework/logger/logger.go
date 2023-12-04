@@ -29,7 +29,7 @@ func (tl TestLogger) Logf(t terratestTesting.TestingT, format string, args ...in
 
 // Logf takes a format string and args and logs
 // formatted string with a timestamp.
-func Logf(t terratestTesting.TestingT, format string, args ...interface{}) {
+func Logf(t *testing.T, format string, args ...interface{}) {
 	t.Helper()
 
 	log := fmt.Sprintf(format, args...)

@@ -34,7 +34,6 @@ type TestEnvironment interface {
 // for example, information about a specific Kubernetes cluster.
 type TestContext interface {
 	KubectlOptions(t terratesting.TestingT) *k8s.KubectlOptions
-	// TODO: I don't love this.
 	KubectlOptionsForNamespace(ns string) *k8s.KubectlOptions
 	KubernetesClient(t terratesting.TestingT) kubernetes.Interface
 	ControllerRuntimeClient(t terratesting.TestingT) client.Client

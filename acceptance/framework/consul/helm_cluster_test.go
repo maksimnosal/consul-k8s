@@ -4,6 +4,7 @@
 package consul
 
 import (
+	terratesting "github.com/gruntwork-io/terratest/modules/testing"
 	"testing"
 
 	"github.com/gruntwork-io/terratest/modules/k8s"
@@ -78,16 +79,16 @@ func (c *ctx) Name() string {
 	return ""
 }
 
-func (c *ctx) KubectlOptions(_ *testing.T) *k8s.KubectlOptions {
+func (c *ctx) KubectlOptions(_ terratesting.TestingT) *k8s.KubectlOptions {
 	return &k8s.KubectlOptions{}
 }
 func (c *ctx) KubectlOptionsForNamespace(ns string) *k8s.KubectlOptions {
 	return &k8s.KubectlOptions{}
 }
-func (c *ctx) KubernetesClient(_ *testing.T) kubernetes.Interface {
+func (c *ctx) KubernetesClient(_ terratesting.TestingT) kubernetes.Interface {
 	return fake.NewSimpleClientset()
 }
-func (c *ctx) ControllerRuntimeClient(_ *testing.T) client.Client {
+func (c *ctx) ControllerRuntimeClient(_ terratesting.TestingT) client.Client {
 	return runtimefake.NewClientBuilder().Build()
 }
 

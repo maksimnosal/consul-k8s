@@ -6,7 +6,6 @@ package consul
 import (
 	"context"
 	"fmt"
-	terratesting "github.com/gruntwork-io/terratest/modules/testing"
 	"strings"
 	"testing"
 	"time"
@@ -124,6 +123,8 @@ func NewHelmCluster(
 }
 
 func (h *HelmCluster) Create(t *testing.T) {
+	t.Helper()
+
 	// Make sure we delete the cluster if we receive an interrupt signal and
 	// register cleanup so that we delete the cluster when test finishes.
 	helpers.Cleanup(t, h.noCleanupOnFailure, h.noCleanup, func() {
@@ -424,7 +425,7 @@ func (h *HelmCluster) SetupConsulClient(t *testing.T, secure bool, release ...st
 // and a role binding that binds the default service account in the helm installation namespace to the cluster role.
 // We bind the default service account for tests that are spinning up pods without a service account set so that
 // they will not be rejected by the kube pod security policy controller.
-func configurePodSecurityPolicies(t terratesting.TestingT, client kubernetes.Interface, cfg *config.TestConfig, namespace string) {
+func configurePodSecurityPolicies(t *testing.T, client kubernetes.Interface, cfg *config.TestConfig, namespace string) {
 	pspName := "test-psp"
 
 	// Pod Security Policy
@@ -520,8 +521,7 @@ func configurePodSecurityPolicies(t terratesting.TestingT, client kubernetes.Int
 		}
 	}
 
-	tt, _ := t.(*testing.T) // TODO this is bad
-	helpers.Cleanup(tt, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		_ = client.PolicyV1beta1().PodSecurityPolicies().Delete(context.Background(), pspName, metav1.DeleteOptions{})
 		_ = client.RbacV1().ClusterRoles().Delete(context.Background(), pspName, metav1.DeleteOptions{})
 		_ = client.RbacV1().RoleBindings(namespace).Delete(context.Background(), pspName, metav1.DeleteOptions{})
