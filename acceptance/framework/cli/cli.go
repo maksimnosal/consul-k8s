@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"testing"
 
 	"github.com/gruntwork-io/terratest/modules/k8s"
+	terratesting "github.com/gruntwork-io/terratest/modules/testing"
 	"github.com/hashicorp/consul-k8s/acceptance/framework/logger"
 )
 
@@ -28,7 +28,7 @@ func NewCLI() (*CLI, error) {
 }
 
 // Run runs the CLI with the given args.
-func (c *CLI) Run(t *testing.T, options *k8s.KubectlOptions, args ...string) ([]byte, error) {
+func (c *CLI) Run(t terratesting.TestingT, options *k8s.KubectlOptions, args ...string) ([]byte, error) {
 	if !c.initialized {
 		return nil, fmt.Errorf("CLI must be initialized before calling Run, use `cli.NewCLI()` to initialize.")
 	}
