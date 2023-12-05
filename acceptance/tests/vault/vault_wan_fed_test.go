@@ -493,7 +493,7 @@ func TestVault_WANFederationViaGateways(t *testing.T) {
 	kustomizeDir := "../fixtures/bases/mesh-gateway"
 	k8s.KubectlApplyK(t, primaryCtx.KubectlOptions(t), kustomizeDir)
 
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8s.KubectlDeleteK(t, primaryCtx.KubectlOptions(t), kustomizeDir)
 	})
 

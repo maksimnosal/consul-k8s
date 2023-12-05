@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	terratesting "github.com/gruntwork-io/terratest/modules/testing"
 	"os"
 	"os/signal"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -84,11 +86,10 @@ func SetupInterruptHandler(cleanup func()) {
 	}()
 }
 
-// Cleanup will both register a cleanup function with t
-// and SetupInterruptHandler to make sure resources get cleaned up
-// if an interrupt signal is caught.
-func Cleanup(t *testing.T, noCleanupOnFailure bool, noCleanup bool, cleanup func()) {
-	t.Helper()
+// CleanupWithOnFailure will both register a cleanup function with t and SetupInterruptHandler to make sure resources
+// get cleaned up if an interrupt signal is caught.
+func CleanupWithOnFailure(t terratesting.TestingT, noCleanupOnFailure bool, noCleanup bool, cleanup func()) {
+	Helper(t)
 
 	// Always clean up when an interrupt signal is caught.
 	SetupInterruptHandler(cleanup)
@@ -97,7 +98,7 @@ func Cleanup(t *testing.T, noCleanupOnFailure bool, noCleanup bool, cleanup func
 	// We need to wrap the cleanup function because t that is passed in to this function
 	// might not have the information on whether the test has failed yet.
 	wrappedCleanupFunc := func() {
-		if !((noCleanupOnFailure && t.Failed()) || noCleanup) {
+		if !((noCleanupOnFailure && Failed(t)) || noCleanup) {
 			logger.Logf(t, "cleaning up resources for %s", t.Name())
 			cleanup()
 		} else {
@@ -105,7 +106,45 @@ func Cleanup(t *testing.T, noCleanupOnFailure bool, noCleanup bool, cleanup func
 		}
 	}
 
-	t.Cleanup(wrappedCleanupFunc)
+	Cleanup(t, wrappedCleanupFunc)
+}
+
+// Cleanup passes a cleanup function to the testing or retry object to be executed on failures.
+func Cleanup(t terratesting.TestingT, cleanup func()) {
+	if tt, ok := t.(*testing.T); ok {
+		tt.Cleanup(cleanup)
+		return
+	}
+	if rt, ok := t.(*retry.R); ok {
+		rt.Cleanup(cleanup)
+		return
+	}
+	panic(fmt.Sprintf("Cannot call Cleanup for objects of type %s", reflect.TypeOf(t)))
+}
+
+// Helper marks the calling function as a test helper function.
+// When printing file and line information, that function will be skipped.
+// Helper may be called simultaneously from multiple goroutines.
+func Helper(t terratesting.TestingT) {
+	if tt, ok := t.(*testing.T); ok {
+		tt.Helper()
+		return
+	}
+	if rt, ok := t.(*retry.R); ok {
+		rt.Helper()
+		return
+	}
+	panic(fmt.Sprintf("Cannot mark function as helper for objects of type %s", reflect.TypeOf(t)))
+}
+
+func Failed(t terratesting.TestingT) bool {
+	if tt, ok := t.(*testing.T); ok {
+		return tt.Failed()
+	}
+	if rt, ok := t.(*retry.R); ok {
+		return rt.Failed()
+	}
+	panic(fmt.Sprintf("Cannot provide failure status for objects of type %s", reflect.TypeOf(t)))
 }
 
 // VerifyFederation checks that the WAN federation between servers is successful

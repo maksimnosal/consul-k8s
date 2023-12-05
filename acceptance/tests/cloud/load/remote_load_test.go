@@ -209,7 +209,7 @@ func TestLoadTestCTGW(t *testing.T) {
 	logger.Log(t, "setting acl permissions for collector and services")
 	aclDir := "../../fixtures/bases/cloud/service-intentions"
 	k8s.KubectlApplyK(t, ctx.KubectlOptions(t), aclDir)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8s.KubectlDeleteK(t, ctx.KubectlOptions(t), aclDir)
 	})
 
@@ -245,7 +245,7 @@ func TestLoadTestCTGW(t *testing.T) {
 		require.NoError(t, err)
 
 		k8s.KubectlApply(t, ctx.KubectlOptions(t), tempFile.Name())
-		helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+		helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 			k8s.KubectlDelete(t, ctx.KubectlOptions(t), tempFile.Name())
 			os.Remove(tempFile.Name())
 		})

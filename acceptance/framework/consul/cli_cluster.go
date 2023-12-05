@@ -124,7 +124,7 @@ func (c *CLICluster) Create(t *testing.T) {
 
 	// Make sure we delete the cluster if we receive an interrupt signal and
 	// register cleanup so that we delete the cluster when test finishes.
-	helpers.Cleanup(t, c.noCleanupOnFailure, c.noCleanup, func() {
+	helpers.CleanupWithOnFailure(t, c.noCleanupOnFailure, c.noCleanup, func() {
 		c.Destroy(t)
 	})
 

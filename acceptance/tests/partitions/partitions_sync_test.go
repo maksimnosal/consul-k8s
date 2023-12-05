@@ -195,13 +195,13 @@ func TestPartitions_Sync(t *testing.T) {
 
 			logger.Logf(t, "creating namespaces %s in servers cluster", staticServerNamespace)
 			k8s.RunKubectl(t, primaryClusterContext.KubectlOptions(t), "create", "ns", staticServerNamespace)
-			helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+			helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 				k8s.RunKubectl(t, primaryClusterContext.KubectlOptions(t), "delete", "ns", staticServerNamespace)
 			})
 
 			logger.Logf(t, "creating namespaces %s in clients cluster", staticServerNamespace)
 			k8s.RunKubectl(t, secondaryClusterContext.KubectlOptions(t), "create", "ns", staticServerNamespace)
-			helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+			helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 				k8s.RunKubectl(t, secondaryClusterContext.KubectlOptions(t), "delete", "ns", staticServerNamespace)
 			})
 

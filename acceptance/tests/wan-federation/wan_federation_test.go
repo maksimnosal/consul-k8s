@@ -154,7 +154,7 @@ func TestWANFederation(t *testing.T) {
 			logger.Log(t, "creating proxy-defaults config")
 			kustomizeDir := "../fixtures/bases/mesh-gateway"
 			k8s.KubectlApplyK(t, secondaryContext.KubectlOptions(t), kustomizeDir)
-			helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+			helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 				k8s.KubectlDeleteK(t, secondaryContext.KubectlOptions(t), kustomizeDir)
 			})
 
@@ -331,7 +331,7 @@ func TestWANFederationFailover(t *testing.T) {
 			logger.Log(t, "Creating proxy-defaults config")
 			kustomizeDir := "../fixtures/bases/mesh-gateway"
 			k8s.KubectlApplyK(t, secondaryContext.KubectlOptions(t), kustomizeDir)
-			helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+			helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 				k8s.KubectlDeleteK(t, secondaryContext.KubectlOptions(t), kustomizeDir)
 			})
 

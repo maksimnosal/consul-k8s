@@ -717,7 +717,7 @@ func (c *cluster) getPeeringAcceptorSecret(t *testing.T, cfg *config.TestConfig,
 		require.NotEmpty(r, acceptorSecretName)
 	})
 
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8s.RunKubectl(t, c.context.KubectlOptions(t), "delete", "secret", acceptorSecretName)
 	})
 
@@ -797,7 +797,7 @@ func (c clusters) verifyServerUpState(t *testing.T, isTproxyEnabled bool) {
 
 func copySecret(t *testing.T, cfg *config.TestConfig, sourceContext, destContext environment.TestContext, secretName string) {
 	k8s.CopySecret(t, sourceContext, destContext, secretName)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8s.RunKubectl(t, destContext.KubectlOptions(t), "delete", "secret", secretName)
 	})
 }
@@ -806,14 +806,14 @@ func createNamespaces(t *testing.T, cfg *config.TestConfig, context environment.
 	logger.Logf(t, "creating namespaces in %s", context.KubectlOptions(t).ContextName)
 	k8s.RunKubectl(t, context.KubectlOptions(t), "create", "ns", staticServerNamespace)
 	k8s.RunKubectl(t, context.KubectlOptions(t), "create", "ns", staticClientNamespace)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8s.RunKubectl(t, context.KubectlOptions(t), "delete", "ns", staticClientNamespace, staticServerNamespace)
 	})
 }
 
 func applyResources(t *testing.T, cfg *config.TestConfig, kustomizeDir string, opts *terratestk8s.KubectlOptions) {
 	k8s.KubectlApplyK(t, opts, kustomizeDir)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8s.KubectlDeleteK(t, opts, kustomizeDir)
 	})
 }

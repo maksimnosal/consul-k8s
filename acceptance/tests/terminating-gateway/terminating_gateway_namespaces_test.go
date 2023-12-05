@@ -62,7 +62,7 @@ func TestTerminatingGatewaySingleNamespace(t *testing.T) {
 
 			logger.Logf(t, "creating Kubernetes namespace %s", testNamespace)
 			k8s.RunKubectl(t, ctx.KubectlOptions(t), "create", "ns", testNamespace)
-			helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+			helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 				k8s.RunKubectl(t, ctx.KubectlOptions(t), "delete", "ns", testNamespace)
 			})
 
@@ -159,14 +159,14 @@ func TestTerminatingGatewayNamespaceMirroring(t *testing.T) {
 
 			logger.Logf(t, "creating Kubernetes namespace %s", testNamespace)
 			k8s.RunKubectl(t, ctx.KubectlOptions(t), "create", "ns", testNamespace)
-			helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+			helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 				k8s.RunKubectl(t, ctx.KubectlOptions(t), "delete", "ns", testNamespace)
 			})
 
 			StaticClientNamespace := "ns2"
 			logger.Logf(t, "creating Kubernetes namespace %s", StaticClientNamespace)
 			k8s.RunKubectl(t, ctx.KubectlOptions(t), "create", "ns", StaticClientNamespace)
-			helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+			helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 				k8s.RunKubectl(t, ctx.KubectlOptions(t), "delete", "ns", StaticClientNamespace)
 			})
 

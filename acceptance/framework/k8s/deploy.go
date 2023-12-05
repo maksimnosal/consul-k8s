@@ -34,7 +34,7 @@ func Deploy(t *testing.T, options *k8s.KubectlOptions, noCleanupOnFailure bool, 
 	err = yaml.NewYAMLOrJSONDecoder(file, 1024).Decode(&deployment)
 	require.NoError(t, err)
 
-	helpers.Cleanup(t, noCleanupOnFailure, noCleanup, func() {
+	helpers.CleanupWithOnFailure(t, noCleanupOnFailure, noCleanup, func() {
 		// Note: this delete command won't wait for pods to be fully terminated.
 		// This shouldn't cause any test pollution because the underlying
 		// objects are deployments, and so when other tests create these
@@ -60,7 +60,7 @@ func DeployKustomize(t *testing.T, options *k8s.KubectlOptions, noCleanupOnFailu
 	err = yaml.NewYAMLOrJSONDecoder(strings.NewReader(output), 1024).Decode(&deployment)
 	require.NoError(t, err)
 
-	helpers.Cleanup(t, noCleanupOnFailure, noCleanup, func() {
+	helpers.CleanupWithOnFailure(t, noCleanupOnFailure, noCleanup, func() {
 		// Note: this delete command won't wait for pods to be fully terminated.
 		// This shouldn't cause any test pollution because the underlying
 		// objects are deployments, and so when other tests create these
@@ -85,7 +85,7 @@ func DeployJob(t *testing.T, options *k8s.KubectlOptions, noCleanupOnFailure boo
 	err = yaml.NewYAMLOrJSONDecoder(strings.NewReader(output), 1024).Decode(&job)
 	require.NoError(t, err)
 
-	helpers.Cleanup(t, noCleanupOnFailure, noCleanup, func() {
+	helpers.CleanupWithOnFailure(t, noCleanupOnFailure, noCleanup, func() {
 		// Note: this delete command won't wait for pods to be fully terminated.
 		// This shouldn't cause any test pollution because the underlying
 		// objects are deployments, and so when other tests create these

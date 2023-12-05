@@ -6,6 +6,7 @@ package vault
 import (
 	"context"
 	"fmt"
+	terratesting "github.com/gruntwork-io/terratest/modules/testing"
 	"os"
 	"strings"
 	"testing"
@@ -124,8 +125,8 @@ func NewVaultCluster(t *testing.T, ctx environment.TestContext, cfg *config.Test
 func (v *VaultCluster) VaultClient(*testing.T) *vapi.Client { return v.vaultClient }
 
 // SetupVaultClient sets up and returns a Vault Client.
-func (v *VaultCluster) SetupVaultClient(t *testing.T) *vapi.Client {
-	t.Helper()
+func (v *VaultCluster) SetupVaultClient(t terratesting.TestingT) *vapi.Client {
+	helpers.Helper(t)
 
 	if v.vaultClient != nil {
 		return v.vaultClient
@@ -144,15 +145,20 @@ func (v *VaultCluster) SetupVaultClient(t *testing.T) *vapi.Client {
 		remotePort,
 		v.logger)
 
+	// TODO: t-eckert VVVVV This sucks!
 	// Retry creating the port forward since it can fail occasionally.
-	retry.RunWith(&retry.Counter{Wait: 5 * time.Second, Count: 60}, t, func(r *retry.R) {
-		// NOTE: It's okay to pass in `t` to ForwardPortE despite being in a retry
-		// because we're using ForwardPortE (not ForwardPort) so the `t` won't
-		// get used to fail the test, just for logging.
-		require.NoError(r, tunnel.ForwardPortE(r))
-	})
+	if tt, ok := t.(*testing.T); ok {
+		retry.RunWith(&retry.Counter{Wait: 5 * time.Second, Count: 60}, tt, func(r *retry.R) {
+			require.NoError(r, tunnel.ForwardPortE(r))
+		})
+	}
+	if rt, ok := t.(*retry.R); ok {
+		retry.RunWith(&retry.Counter{Wait: 5 * time.Second, Count: 60}, rt, func(r *retry.R) {
+			require.NoError(r, tunnel.ForwardPortE(r))
+		})
+	}
 
-	t.Cleanup(func() {
+	helpers.Cleanup(t, func() {
 		tunnel.Close()
 	})
 
@@ -249,7 +255,7 @@ func (v *VaultCluster) Create(t *testing.T, ctx environment.TestContext, vaultNa
 
 	// Make sure we delete the cluster if we receive an interrupt signal and
 	// register cleanup so that we delete the cluster when test finishes.
-	helpers.Cleanup(t, v.noCleanupOnFailure, v.noCleanup, func() {
+	helpers.CleanupWithOnFailure(t, v.noCleanupOnFailure, v.noCleanup, func() {
 		v.Destroy(t)
 	})
 
@@ -422,7 +428,7 @@ func (v *VaultCluster) initAndUnseal(t *testing.T) {
 		require.Equal(r, corev1.PodRunning, serverPod.Status.Phase)
 
 		// Set up the client so that we can make API calls to initialize and unseal.
-		v.vaultClient = v.SetupVaultClient(t)
+		v.vaultClient = v.SetupVaultClient(r)
 
 		// Initialize Vault with 1 secret share. We don't need to
 		// more key shares for this test installation.
@@ -444,7 +450,7 @@ func (v *VaultCluster) initAndUnseal(t *testing.T) {
 	rootTokenSecret := fmt.Sprintf("%s-vault-root-token", v.releaseName)
 	v.logger.Logf(t, "saving Vault root token to %q Kubernetes secret", rootTokenSecret)
 
-	helpers.Cleanup(t, v.noCleanupOnFailure, v.noCleanup, func() {
+	helpers.CleanupWithOnFailure(t, v.noCleanupOnFailure, v.noCleanup, func() {
 		_ = v.kubernetesClient.CoreV1().Secrets(namespace).Delete(context.Background(), rootTokenSecret, metav1.DeleteOptions{})
 	})
 	_, err := v.kubernetesClient.CoreV1().Secrets(namespace).Create(context.Background(), &corev1.Secret{

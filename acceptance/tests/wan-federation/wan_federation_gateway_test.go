@@ -124,7 +124,7 @@ func TestWANFederation_Gateway(t *testing.T) {
 	logger.Log(t, "creating proxy-defaults config in dc1")
 	kustomizeDir := "../fixtures/cases/api-gateways/mesh"
 	k8s.KubectlApplyK(t, primaryContext.KubectlOptions(t), kustomizeDir)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8s.KubectlDeleteK(t, primaryContext.KubectlOptions(t), kustomizeDir)
 	})
 
@@ -142,7 +142,7 @@ func TestWANFederation_Gateway(t *testing.T) {
 		logger.Log(t, "creating api-gateway resources in dc1")
 		out, err := k8s.RunKubectlAndGetOutputE(t, primaryContext.KubectlOptions(t), "apply", "-k", "../fixtures/bases/api-gateway")
 		require.NoError(t, err, out)
-		helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+		helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 			// Ignore errors here because if the test ran as expected
 			// the custom resources will have been deleted.
 			k8s.RunKubectlAndGetOutputE(t, primaryContext.KubectlOptions(t), "delete", "-k", "../fixtures/bases/api-gateway")
@@ -150,7 +150,7 @@ func TestWANFederation_Gateway(t *testing.T) {
 
 		// create a service resolver for doing cross-dc redirects.
 		k8s.KubectlApplyK(t, secondaryContext.KubectlOptions(t), "../fixtures/cases/api-gateways/dc1-to-dc2-resolver")
-		helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+		helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 			k8s.KubectlDeleteK(t, secondaryContext.KubectlOptions(t), "../fixtures/cases/api-gateways/dc1-to-dc2-resolver")
 		})
 
@@ -169,7 +169,7 @@ func TestWANFederation_Gateway(t *testing.T) {
 		logger.Log(t, "creating api-gateway resources in dc2")
 		out, err := k8s.RunKubectlAndGetOutputE(t, secondaryContext.KubectlOptions(t), "apply", "-k", "../fixtures/bases/api-gateway")
 		require.NoError(t, err, out)
-		helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+		helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 			// Ignore errors here because if the test ran as expected
 			// the custom resources will have been deleted.
 			k8s.RunKubectlAndGetOutputE(t, secondaryContext.KubectlOptions(t), "delete", "-k", "../fixtures/bases/api-gateway")
@@ -177,7 +177,7 @@ func TestWANFederation_Gateway(t *testing.T) {
 
 		// create a service resolver for doing cross-dc redirects.
 		k8s.KubectlApplyK(t, secondaryContext.KubectlOptions(t), "../fixtures/cases/api-gateways/dc2-to-dc1-resolver")
-		helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+		helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 			k8s.KubectlDeleteK(t, secondaryContext.KubectlOptions(t), "../fixtures/cases/api-gateways/dc2-to-dc1-resolver")
 		})
 

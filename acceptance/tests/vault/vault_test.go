@@ -356,7 +356,7 @@ func testVault(t *testing.T, testAutoBootstrap bool) {
 	} else {
 		k8s.DeployKustomize(t, ctx.KubectlOptions(t), cfg.NoCleanupOnFailure, cfg.NoCleanup, cfg.DebugDirectory, "../fixtures/cases/static-client-inject")
 	}
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8s.KubectlDeleteK(t, ctx.KubectlOptions(t), "../fixtures/bases/intention")
 	})
 	k8s.KubectlApplyK(t, ctx.KubectlOptions(t), "../fixtures/bases/intention")

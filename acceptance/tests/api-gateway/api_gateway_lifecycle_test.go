@@ -56,7 +56,7 @@ func TestAPIGateway_Lifecycle(t *testing.T) {
 	logger.Log(t, "creating gateway class config")
 	err := k8sClient.Create(context.Background(), gatewayClassConfig)
 	require.NoError(t, err)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		logger.Log(t, "deleting all gateway class configs")
 		k8sClient.DeleteAllOf(context.Background(), &v1alpha1.GatewayClassConfig{})
 	})
@@ -72,7 +72,7 @@ func TestAPIGateway_Lifecycle(t *testing.T) {
 	logger.Log(t, "creating controlled gateway class one")
 	createGatewayClass(t, k8sClient, controlledGatewayClassOneName, gatewayClassControllerName, gatewayParametersRef)
 
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		logger.Log(t, "deleting all gateway classes")
 		k8sClient.DeleteAllOf(context.Background(), &gwv1beta1.GatewayClass{})
 	})
@@ -105,7 +105,7 @@ func TestAPIGateway_Lifecycle(t *testing.T) {
 	logger.Log(t, "creating certificate")
 	err = k8sClient.Create(context.Background(), certificate)
 	require.NoError(t, err)
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		k8sClient.Delete(context.Background(), certificate)
 	})
 
@@ -114,7 +114,7 @@ func TestAPIGateway_Lifecycle(t *testing.T) {
 	logger.Log(t, "creating controlled gateway one")
 	controlledGatewayOne := createGateway(t, k8sClient, controlledGatewayOneName, defaultNamespace, controlledGatewayClassOneName, certificateName)
 
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		logger.Log(t, "deleting all gateways")
 		k8sClient.DeleteAllOf(context.Background(), &gwv1beta1.Gateway{}, client.InNamespace(defaultNamespace))
 	})
@@ -132,7 +132,7 @@ func TestAPIGateway_Lifecycle(t *testing.T) {
 	logger.Log(t, "creating route one")
 	routeOne := createRoute(t, k8sClient, routeOneName, defaultNamespace, controlledGatewayOneName, targetName)
 
-	helpers.Cleanup(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
+	helpers.CleanupWithOnFailure(t, cfg.NoCleanupOnFailure, cfg.NoCleanup, func() {
 		logger.Log(t, "deleting all http routes")
 		k8sClient.DeleteAllOf(context.Background(), &gwv1beta1.HTTPRoute{}, client.InNamespace(defaultNamespace))
 	})
