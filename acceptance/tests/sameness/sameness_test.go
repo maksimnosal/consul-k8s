@@ -6,6 +6,7 @@ package sameness
 import (
 	ctx "context"
 	"fmt"
+	terratesting "github.com/gruntwork-io/terratest/modules/testing"
 	"strconv"
 	"strings"
 	"sync"
@@ -672,7 +673,7 @@ func (c *cluster) preparedQueryFailoverCheck(t *testing.T, releaseName string, e
 	// that failover occurred, that is left to client `Execute`
 	dnsPQLookup := []string{fmt.Sprintf("%s.query.consul", *c.pqName)}
 	retry.RunWith(timer, t, func(r *retry.R) {
-		logs := dnsQuery(t, releaseName, dnsPQLookup, c.primaryCluster, failover)
+		logs := dnsQuery(r, releaseName, dnsPQLookup, c.primaryCluster, failover)
 		assert.Contains(r, logs, fmt.Sprintf("SERVER: %s", *c.primaryCluster.dnsIP))
 		assert.Contains(r, logs, "ANSWER SECTION:")
 		assert.Contains(r, logs, *failover.staticServerIP)
@@ -686,7 +687,7 @@ func (c *cluster) dnsFailoverCheck(t *testing.T, cfg *config.TestConfig, release
 	retry.RunWith(timer, t, func(r *retry.R) {
 		// Use the primary cluster when performing a DNS lookup, this mostly affects cases
 		// where we are verifying DNS for a partition
-		logs := dnsQuery(t, releaseName, dnsLookup, c.primaryCluster, failover)
+		logs := dnsQuery(r, releaseName, dnsLookup, c.primaryCluster, failover)
 
 		assert.Contains(r, logs, fmt.Sprintf("SERVER: %s", *c.primaryCluster.dnsIP))
 		assert.Contains(r, logs, "ANSWER SECTION:")
@@ -830,18 +831,33 @@ func setK8sNodeLocality(t *testing.T, context environment.TestContext, c *cluste
 }
 
 // dnsQuery performs a dns query with the provided query string.
-func dnsQuery(t *testing.T, releaseName string, dnsQuery []string, dnsServer, failover *cluster) string {
+func dnsQuery(t terratesting.TestingT, releaseName string, dnsQuery []string, dnsServer, failover *cluster) string {
 	timer := &retry.Timer{Timeout: retryTimeout, Wait: 1 * time.Second}
 	var logs string
-	retry.RunWith(timer, t, func(r *retry.R) {
-		args := []string{"exec", "-i",
-			staticClientDeployment, "-c", staticClientName, "--", "dig", fmt.Sprintf("@%s-consul-dns.default",
-				releaseName)}
-		args = append(args, dnsQuery...)
-		var err error
-		logs, err = k8s.RunKubectlAndGetOutputE(t, dnsServer.clientOpts, args...)
-		require.NoError(r, err)
-	})
+
+	// TODO: t-eckert VVVVV This sucks!
+	if tt, ok := t.(*testing.T); ok {
+		retry.RunWith(timer, tt, func(r *retry.R) {
+			args := []string{"exec", "-i",
+				staticClientDeployment, "-c", staticClientName, "--", "dig", fmt.Sprintf("@%s-consul-dns.default",
+					releaseName)}
+			args = append(args, dnsQuery...)
+			var err error
+			logs, err = k8s.RunKubectlAndGetOutputE(t, dnsServer.clientOpts, args...)
+			require.NoError(r, err)
+		})
+	}
+	if rt, ok := t.(*retry.R); ok {
+		retry.RunWith(timer, rt, func(r *retry.R) {
+			args := []string{"exec", "-i",
+				staticClientDeployment, "-c", staticClientName, "--", "dig", fmt.Sprintf("@%s-consul-dns.default",
+					releaseName)}
+			args = append(args, dnsQuery...)
+			var err error
+			logs, err = k8s.RunKubectlAndGetOutputE(t, dnsServer.clientOpts, args...)
+			require.NoError(r, err)
+		})
+	}
 	logger.Logf(t, "%s: %s", failover.name, logs)
 	return logs
 }

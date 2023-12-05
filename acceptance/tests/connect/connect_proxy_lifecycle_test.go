@@ -329,7 +329,7 @@ func TestConnectInject_ProxyLifecycleShutdownJob(t *testing.T) {
 
 		// Wait for the job to complete.
 		retry.RunWith(&retry.Timer{Timeout: 4 * time.Minute, Wait: 30 * time.Second}, t, func(r *retry.R) {
-			logger.Log(t, "Checking if job completed...")
+			logger.Log(r, "Checking if job completed...")
 			jobs, err := ctx.KubernetesClient(r).BatchV1().Jobs(ns).List(
 				context.Background(),
 				metav1.ListOptions{
