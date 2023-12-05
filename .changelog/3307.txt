@@ -1,0 +1,3 @@
+```release-note:bug-fix
+control-plane: Remove abandoned virutal nodes in the Consul Catalog when they do not have any services listed.
+```
