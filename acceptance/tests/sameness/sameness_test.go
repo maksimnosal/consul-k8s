@@ -312,8 +312,19 @@ func TestFailover_Connect(t *testing.T) {
 			// Create a ProxyDefaults resource to configure services to use the mesh
 			// gateways and set server and client opts.
 			for k, v := range testClusters {
-				logger.Logf(t, "applying resources on %s", v.context.KubectlOptions(t).ContextName)
+				if v.hasServer {
+					logger.Logf(t, "creating client for %s", v.context.KubectlOptions(t).ContextName)
+					testClusters[k].client, _ = testClusters[k].helmCluster.SetupConsulClient(t, c.ACLsEnabled)
 
+					// Make sure the client can return config before proceeding
+					timer := &retry.Timer{Timeout: retryTimeout, Wait: 1 * time.Second}
+					retry.RunWith(timer, t, func(r *retry.R) {
+						_, err := testClusters[k].client.Agent().Self()
+						require.NoError(r, err)
+					})
+				}
+
+				logger.Logf(t, "applying resources on %s", v.context.KubectlOptions(t).ContextName)
 				// Client will use the client namespace.
 				testClusters[k].clientOpts = &terratestk8s.KubectlOptions{
 					ContextName: v.context.KubectlOptions(t).ContextName,
@@ -333,9 +344,6 @@ func TestFailover_Connect(t *testing.T) {
 				applyResources(t, cfg, "../fixtures/bases/sameness/override-ns", v.serverOpts)
 
 				// Only assign a client if the cluster is running a Consul server.
-				if v.hasServer {
-					testClusters[k].client, _ = testClusters[k].helmCluster.SetupConsulClient(t, c.ACLsEnabled)
-				}
 			}
 
 			// Assign the client default partition client to the partition
