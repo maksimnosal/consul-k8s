@@ -44,7 +44,6 @@ const (
 	terminatingGateway = "terminating-gateway"
 	ingressGateway     = "ingress-gateway"
 
-	xdsFetchTimeoutMs                    = "xds_fetch_timeout_ms"
 	envoyPrometheusBindAddr              = "envoy_prometheus_bind_addr"
 	envoyTelemetryCollectorBindSocketDir = "envoy_telemetry_collector_bind_socket_dir"
 	defaultNS                            = "default"
@@ -399,13 +398,16 @@ func proxyServiceID(pod corev1.Pod, serviceEndpoints corev1.Endpoints) string {
 	return fmt.Sprintf("%s-%s", pod.Name, proxySvcName)
 }
 
-func annotationXDSFetchTimeoutMs(pod corev1.Pod) *int {
-	if timeout, ok := pod.Annotations[constants.AnnotationXDSFetchTimeoutMs]; ok && timeout != "" {
-		if val, err := strconv.Atoi(timeout); err == nil {
-			return &val
+func annotationProxyConfigMap(pod corev1.Pod) (map[string]any, error) {
+	parsed := make(map[string]any)
+	if config, ok := pod.Annotations[constants.AnnotationProxyConfigMap]; ok && config != "" {
+		err := json.Unmarshal([]byte(config), &parsed)
+		if err != nil {
+			// Always return an empty map on error
+			return make(map[string]any), fmt.Errorf("unable to parse `%v` annotation for pod `%v`: %w", constants.AnnotationProxyConfigMap, pod.Name, err)
 		}
 	}
-	return nil
+	return parsed, nil
 }
 
 // createServiceRegistrations creates the service and proxy service instance registrations with the information from the
@@ -494,10 +496,16 @@ func (r *Controller) createServiceRegistrations(pod corev1.Pod, serviceEndpoints
 
 	proxySvcName := proxyServiceName(pod, serviceEndpoints)
 	proxySvcID := proxyServiceID(pod, serviceEndpoints)
+
+	// Set the default values from the annotation, if possible.
+	baseConfig, err := annotationProxyConfigMap(pod)
+	if err != nil {
+		r.Log.Error(err, "annotation unable to be applied")
+	}
 	proxyConfig := &api.AgentServiceConnectProxyConfig{
 		DestinationServiceName: svcName,
 		DestinationServiceID:   svcID,
-		Config:                 make(map[string]interface{}),
+		Config:                 baseConfig,
 	}
 
 	// If metrics are enabled, the proxyConfig should set envoy_prometheus_bind_addr to a listener on 0.0.0.0 on
@@ -520,10 +528,6 @@ func (r *Controller) createServiceRegistrations(pod corev1.Pod, serviceEndpoints
 
 	if r.EnableTelemetryCollector && proxyConfig.Config != nil {
 		proxyConfig.Config[envoyTelemetryCollectorBindSocketDir] = "/consul/connect-inject"
-	}
-
-	if t := annotationXDSFetchTimeoutMs(pod); t != nil && proxyConfig.Config != nil {
-		proxyConfig.Config[xdsFetchTimeoutMs] = *t
 	}
 
 	if consulServicePort > 0 {
@@ -704,12 +708,18 @@ func (r *Controller) createGatewayRegistrations(pod corev1.Pod, serviceEndpoints
 		metaKeySyntheticNode:     "true",
 	}
 
+	// Set the default values from the annotation, if possible.
+	baseConfig, err := annotationProxyConfigMap(pod)
+	if err != nil {
+		r.Log.Error(err, "annotation unable to be applied")
+	}
+
 	service := &api.AgentService{
 		ID:      pod.Name,
 		Address: pod.Status.PodIP,
 		Meta:    meta,
 		Proxy: &api.AgentServiceConnectProxyConfig{
-			Config: map[string]interface{}{},
+			Config: baseConfig,
 		},
 	}
 
@@ -783,14 +793,10 @@ func (r *Controller) createGatewayRegistrations(pod corev1.Pod, serviceEndpoints
 				Port:    wanPort,
 			},
 		}
-		service.Proxy = &api.AgentServiceConnectProxyConfig{
-			Config: map[string]interface{}{
-				"envoy_gateway_no_default_bind": true,
-				"envoy_gateway_bind_addresses": map[string]interface{}{
-					"all-interfaces": map[string]interface{}{
-						"address": "0.0.0.0",
-					},
-				},
+		service.Proxy.Config["envoy_gateway_no_default_bind"] = true
+		service.Proxy.Config["envoy_gateway_bind_addresses"] = map[string]interface{}{
+			"all-interfaces": map[string]interface{}{
+				"address": "0.0.0.0",
 			},
 		}
 
@@ -799,23 +805,11 @@ func (r *Controller) createGatewayRegistrations(pod corev1.Pod, serviceEndpoints
 	}
 
 	if r.MetricsConfig.DefaultEnableMetrics && r.MetricsConfig.EnableGatewayMetrics {
-		if pod.Annotations[constants.AnnotationGatewayKind] == ingressGateway {
-			service.Proxy.Config["envoy_prometheus_bind_addr"] = fmt.Sprintf("%s:20200", pod.Status.PodIP)
-		} else {
-			service.Proxy = &api.AgentServiceConnectProxyConfig{
-				Config: map[string]interface{}{
-					"envoy_prometheus_bind_addr": fmt.Sprintf("%s:20200", pod.Status.PodIP),
-				},
-			}
-		}
+		service.Proxy.Config["envoy_prometheus_bind_addr"] = fmt.Sprintf("%s:20200", pod.Status.PodIP)
 	}
 
 	if r.EnableTelemetryCollector && service.Proxy != nil && service.Proxy.Config != nil {
 		service.Proxy.Config[envoyTelemetryCollectorBindSocketDir] = "/consul/service"
-	}
-
-	if t := annotationXDSFetchTimeoutMs(pod); t != nil && service.Proxy.Config != nil {
-		service.Proxy.Config[xdsFetchTimeoutMs] = *t
 	}
 
 	serviceRegistration := &api.CatalogRegistration{

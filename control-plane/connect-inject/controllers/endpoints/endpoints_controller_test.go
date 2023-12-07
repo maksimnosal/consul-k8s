@@ -983,7 +983,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 			},
 			k8sObjects: func() []runtime.Object {
 				pod1 := createServicePod("pod1", "1.2.3.4", true, true)
-				pod1.Annotations[constants.AnnotationXDSFetchTimeoutMs] = "9999"
+				pod1.Annotations[constants.AnnotationProxyConfigMap] = `{ "xds_fetch_timeout_ms": 9999 }`
 				endpoint := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "service-created",
@@ -1080,7 +1080,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 					constants.AnnotationGatewayWANAddress:        "2.3.4.5",
 					constants.AnnotationGatewayWANPort:           "443",
 					constants.AnnotationMeshGatewayContainerPort: "8443",
-					constants.AnnotationXDSFetchTimeoutMs:        "9999",
+					constants.AnnotationProxyConfigMap:           `{ "xds_fetch_timeout_ms": 9999 }`,
 					constants.AnnotationGatewayKind:              meshGateway})
 				endpoint := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1300,7 +1300,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 				gateway := createGatewayPod("terminating-gateway", "1.2.3.4", map[string]string{
 					constants.AnnotationGatewayKind:              terminatingGateway,
 					constants.AnnotationGatewayConsulServiceName: "terminating-gateway",
-					constants.AnnotationXDSFetchTimeoutMs:        "9999",
+					constants.AnnotationProxyConfigMap:           `{ "xds_fetch_timeout_ms": 9999 }`,
 				})
 				endpoint := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1434,7 +1434,7 @@ func TestReconcileCreateEndpoint(t *testing.T) {
 					constants.AnnotationGatewayKind:              ingressGateway,
 					constants.AnnotationGatewayWANSource:         "Service",
 					constants.AnnotationGatewayWANPort:           "8443",
-					constants.AnnotationXDSFetchTimeoutMs:        "9999",
+					constants.AnnotationProxyConfigMap:           `{ "xds_fetch_timeout_ms": 9999 }`,
 				})
 				endpoint := &corev1.Endpoints{
 					ObjectMeta: metav1.ObjectMeta{
